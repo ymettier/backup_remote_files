@@ -1,0 +1,10 @@
+backups:
+  someid:
+    url: https://some.url/data
+    username: ""
+    password: ""
+    outputFile: "outputfile"
+
+interval: "2h"
+retryInterval: "10m"
+metricsPrefix: "brf"

@@ -11,11 +11,32 @@ Because I wanted to check that the retrieval was done with success, I implemente
 This tool should run as a daemon and a control on http://localhost:9289/metrics shows if everything is going well.
 
 Of course, a shell script like this would do the same, but without any control on the retrieved files:
-```
+
+```bash
 while true; do
   curl -sL -u username:password http://remote.url/remote/file -o backup_file
   sleep 86400 # 1 day
 done
+```
+
+## Run
+
+Run a binary. Example:
+
+```bash
+./backup_remote_files -h
+./backup_remote_files -c config.yaml
+```
+
+Run with docker or podman
+
+```bash
+podman run --rm -it ghcr.io/ymettier/backup_remote_files:latest -V
+
+podman run --rm -it \
+    -v .:/files:z \
+    -p 9289:9289 \
+    ghcr.io/ymettier/backup_remote_files:latest -c /files/config.yaml
 ```
 
 ## Configuration
@@ -44,7 +65,7 @@ If none of `LOG_TXT_FILENAME` or `LOG_JSON_FILENAME` is specified, logs will be 
 
 ### Development Build
 
-```
+```bash
 go mod download
 echo build > version.txt
 go test ./...
@@ -52,7 +73,8 @@ go build -v .
 ```
 
 ### Run Linters
-```
+
+```bash
 GOLANGCILINTVERSION="1.59.0" # See https://hub.docker.com/r/golangci/golangci-lint/tags
 DOCKER=podman # or DOCKER="sudo docker" or DOCKER="docker"
 
@@ -61,7 +83,7 @@ ${DOCKER} run -t --rm --privileged -v $(pwd):/app -w /app "golangci/golangci-lin
 
 ### Release build
 
-```
+```bash
 go mod download
 git tag <version>
 git tag --points-at HEAD > version.txt
@@ -72,11 +94,13 @@ go build -v .
 ### Dockerfile build
 
 Optional :
-```
+
+```bash
 git tag <version>
 ```
 
 Build:
-```
+
+```bash
 podman build -t backup_remote_files:build .
 ```

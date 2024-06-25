@@ -1,6 +1,6 @@
 module backup_remote_files
 
-go 1.22
+go 1.22.4
 
 require (
 	github.com/alecthomas/kong v0.9.0

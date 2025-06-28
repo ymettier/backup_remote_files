@@ -159,9 +159,3 @@ issues:
 
 run:
   timeout: 5m
-  issues:
-    exclude-dirs:
-      - test/testdata_etc # test files
-      - internal/cache # extracted from Go code
-      - internal/renameio # extracted from Go code
-      - internal/robustio # extracted from Go code

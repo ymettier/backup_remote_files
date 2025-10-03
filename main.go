@@ -123,7 +123,7 @@ func backupFile(id, url, username, password, outputFile string) (retrieveSuccess
 	}
 	defer resp.Body.Close()
 
-	outputFileFD, err := os.Create(outputFile)
+	outputFileFD, err := os.Create(outputFile + ".part")
 	if err != nil {
 		l.Error("Failed to open file for writing", zap.String("id", id), zap.String("filename", outputFile), zap.Error(err))
 		return true, err
@@ -133,7 +133,25 @@ func backupFile(id, url, username, password, outputFile string) (retrieveSuccess
 		l.Error("Failed to write contents to file", zap.String("id", id), zap.String("filename", outputFile))
 		return true, err
 	}
-	l.Info("Successfully retrieved file", zap.String("id", id), zap.String("filename", outputFile))
+	outputFileFD.Close()
+
+	// code 300 is http.StatusMultipleChoices
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		l.Error("Request returned HTTP status code >= 300", zap.String("id", id), zap.String("url", url), zap.Int("status", resp.StatusCode))
+		os.Remove(outputFile + ".part")
+		return false, nil
+	} else {
+		err := os.Rename(outputFile+".part", outputFile)
+		if err != nil {
+			l.Error("Failed to rename file",
+				zap.String("id", id),
+				zap.String("oldFilename", outputFile+".part"),
+				zap.String("newFilename", outputFile),
+			)
+			return true, err
+		}
+		l.Info("Successfully retrieved file", zap.String("id", id), zap.String("filename", outputFile))
+	}
 	return true, nil
 }
 

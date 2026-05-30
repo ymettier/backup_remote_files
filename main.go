@@ -51,7 +51,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 				Name:      "backup_status",
 				Help:      "Status of latest backup",
 			},
-			[]string{"id"},
+			[]string{"id"}, //nolint:goconst // label value is not constant
 		),
 		Size: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{

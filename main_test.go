@@ -77,7 +77,7 @@ func TestRetrieveUrlsWithExistingTarget(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }() // os.Args is a "global variable", so keep the state from before the test, and restore it after.
 
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename} //nolint:goconst // args is better explicit here
 
 	// from main.go
 	cfg, err := config.New("0.0.0")

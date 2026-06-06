@@ -2,23 +2,23 @@ package logger
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
-	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
-
-	"gopkg.in/natefinch/lumberjack.v2"
+	"syscall"
 )
 
 type ctxKey struct{}
 
 var once sync.Once
-var logger *slog.Logger
+var logger *Logger
+
+type Logger struct {
+	*slog.Logger
+}
 
 func getGitRevision() string {
 	if buildInfo, ok := debug.ReadBuildInfo(); ok {
@@ -31,131 +31,82 @@ func getGitRevision() string {
 	return ""
 }
 
-type TeeHandler struct {
-	handlers []slog.Handler
-}
-
-func (h *TeeHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	for _, handler := range h.handlers {
-		if handler.Enabled(ctx, level) {
-			return true
-		}
-	}
-	return false
-}
-
-func (h *TeeHandler) Handle(ctx context.Context, record slog.Record) error {
-	for _, handler := range h.handlers {
-		if handler.Enabled(ctx, record.Level) {
-			if err := handler.Handle(ctx, record.Clone()); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func (h *TeeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	newHandlers := make([]slog.Handler, len(h.handlers))
-	for i, handler := range h.handlers {
-		newHandlers[i] = handler.WithAttrs(attrs)
-	}
-	return &TeeHandler{handlers: newHandlers}
-}
-
-func (h *TeeHandler) WithGroup(name string) slog.Handler {
-	newHandlers := make([]slog.Handler, len(h.handlers))
-	for i, handler := range h.handlers {
-		newHandlers[i] = handler.WithGroup(name)
-	}
-	return &TeeHandler{handlers: newHandlers}
-}
-
-func newLogger() *slog.Logger {
-	var level slog.Level
+// LOG_LEVEL environment variable sets the log level.
+func newLogger() *Logger {
+	// Define log level
+	level := slog.LevelInfo
 	levelEnv := os.Getenv("LOG_LEVEL")
 	if levelEnv != "" {
-		if err := level.UnmarshalText([]byte(strings.ToUpper(levelEnv))); err != nil {
-			log.Println(fmt.Errorf("invalid level, defaulting to INFO: %w", err))
-			level = slog.LevelInfo
+		var l slog.Level
+		if err := l.UnmarshalText([]byte(strings.ToUpper(levelEnv))); err != nil {
+			slog.Warn("invalid level, defaulting to INFO", "error", err)
+		} else {
+			level = l
 		}
-	} else {
-		level = slog.LevelInfo
 	}
 
 	opts := &slog.HandlerOptions{
 		Level: level,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			if a.Key == slog.TimeKey {
-				return slog.Attr{Key: "timestamp", Value: slog.StringValue(a.Value.Time().Format("2006-01-02T15:04:05.000-0700"))}
-			}
-			if a.Key == slog.LevelKey {
-				return slog.Attr{Key: a.Key, Value: slog.StringValue(strings.ToUpper(a.Value.String()))}
-			}
-			return a
-		},
 	}
 
-	logWriters := make(map[string]io.Writer)
-	for _, t := range []string{"TXT", "JSON"} {
-		filename := os.Getenv("LOG_" + t + "_FILENAME")
-		if filename != "" {
-			switch filename {
-			case "stdout":
-				logWriters[t] = os.Stdout
-			case "stderr":
-				logWriters[t] = os.Stderr
-			default:
-				logWriters[t] = &lumberjack.Logger{
-					Filename:   filename,
-					MaxSize:    5,
-					MaxBackups: 10,
-					MaxAge:     14,
-					Compress:   true,
-				}
+	// Define log writer
+	var w io.Writer = os.Stderr
+	filename := os.Getenv("LOG_TXT_FILENAME")
+
+	if filename != "" {
+		switch filename {
+		case "stdout":
+			w = os.Stdout
+		case "stderr":
+			w = os.Stderr
+		default:
+			f, err := os.OpenFile(filename, //nolint:gosec // The user specifies the filename in the configuration file.
+				os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+				syscall.S_IRUSR|syscall.S_IWUSR|syscall.S_IRGRP|syscall.S_IROTH,
+			)
+			if err != nil {
+				slog.Warn("failed to open log file, defaulting to stderr", "filename", filename, "error", err)
+			} else {
+				w = f
 			}
 		}
 	}
-	if len(logWriters) == 0 {
-		logWriters["TXT"] = os.Stderr
-	}
 
-	var handlers []slog.Handler
-	if writer, ok := logWriters["TXT"]; ok {
-		handlers = append(handlers, slog.NewTextHandler(writer, opts))
-	}
-	if writer, ok := logWriters["JSON"]; ok {
-		gitRevision := getGitRevision()
-		jsonHandler := slog.NewJSONHandler(writer, opts).WithAttrs([]slog.Attr{
-			slog.String("git_revision", gitRevision),
-			slog.String("go_version", runtime.Version()),
-		})
-		handlers = append(handlers, jsonHandler)
-	}
-
-	var handler slog.Handler
-	if len(handlers) == 1 {
-		handler = handlers[0]
-	} else {
-		handler = &TeeHandler{handlers: handlers}
-	}
-	return slog.New(handler)
+	// Create new logger
+	return &Logger{slog.New(slog.NewTextHandler(w, opts))}
 }
 
-func Get() *slog.Logger {
+// Get initializes a Logger instance if it has not been initialized
+// already and returns the same instance for subsequent calls.
+func Get() *Logger {
 	once.Do(func() {
 		logger = newLogger()
 	})
+
 	return logger
 }
 
-func FromCtx(ctx context.Context) *slog.Logger {
-	if l, ok := ctx.Value(ctxKey{}).(*slog.Logger); ok {
+// FromCtx returns the Logger associated with the ctx. If no logger
+// is associated, the default logger is returned, unless it is nil
+// in which case a disabled logger is returned.
+func FromCtx(ctx context.Context) *Logger {
+	if l, ok := ctx.Value(ctxKey{}).(*Logger); ok {
+		return l
+	} else if l := logger; l != nil {
 		return l
 	}
-	return Get()
+
+	return &Logger{slog.New(slog.NewTextHandler(io.Discard, nil))}
 }
 
-func WithCtx(ctx context.Context, l *slog.Logger) context.Context {
+// WithCtx returns a copy of ctx with the Logger attached.
+func WithCtx(ctx context.Context, l *Logger) context.Context {
+	if lp, ok := ctx.Value(ctxKey{}).(*Logger); ok {
+		if lp == l {
+			// Do not store same logger.
+			return ctx
+		}
+	}
+
 	return context.WithValue(ctx, ctxKey{}, l)
 }

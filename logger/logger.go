@@ -2,13 +2,16 @@ package logger
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
-	"syscall"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 type ctxKey struct{}
@@ -39,7 +42,8 @@ func newLogger() *Logger {
 	if levelEnv != "" {
 		var l slog.Level
 		if err := l.UnmarshalText([]byte(strings.ToUpper(levelEnv))); err != nil {
-			slog.Warn("invalid level, defaulting to INFO", "error", err)
+			log.Println(fmt.Errorf("invalid level, defaulting to INFO: %w", err))
+			level = l
 		} else {
 			level = l
 		}
@@ -60,14 +64,12 @@ func newLogger() *Logger {
 		case "stderr":
 			w = os.Stderr
 		default:
-			f, err := os.OpenFile(filename, //nolint:gosec // The user specifies the filename in the configuration file.
-				os.O_APPEND|os.O_CREATE|os.O_WRONLY,
-				syscall.S_IRUSR|syscall.S_IWUSR|syscall.S_IRGRP|syscall.S_IROTH,
-			)
-			if err != nil {
-				slog.Warn("failed to open log file, defaulting to stderr", "filename", filename, "error", err)
-			} else {
-				w = f
+			w = &lumberjack.Logger{
+				Filename:   filename,
+				MaxSize:    5, // megabytes
+				MaxBackups: 10,
+				MaxAge:     14,   // days
+				Compress:   true, // disabled by default
 			}
 		}
 	}

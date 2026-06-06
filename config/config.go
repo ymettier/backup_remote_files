@@ -105,6 +105,31 @@ func (c *Config) readConfig(filename string) error {
 	}
 
 	err = yaml.Unmarshal(yamlFile, &data)
+
+	// Logging configuration
+	if logging, ok := data["logging"].(map[string]any); ok {
+		var logOpts logger.LogOptions
+		if level, ok := logging["level"].(string); ok {
+			logOpts.Level = level
+		}
+		if filename, ok := logging["filename"].(string); ok {
+			logOpts.Filename = filename
+		}
+		if maxSize, ok := logging["maxSize"].(int); ok {
+			logOpts.MaxSize = maxSize
+		}
+		if maxBackups, ok := logging["maxBackups"].(int); ok {
+			logOpts.MaxBackups = maxBackups
+		}
+		if maxAge, ok := logging["maxAge"].(int); ok {
+			logOpts.MaxAge = maxAge
+		}
+		if compress, ok := logging["compress"].(bool); ok {
+			logOpts.Compress = compress
+		}
+		logger.Reset(&logOpts)
+		l = logger.Get() // Update local logger reference
+	}
 	if err != nil {
 		l.Error("Failed to parse configuration file", slog.String("file", filename), slog.Any("error", err)); os.Exit(1)
 		return err

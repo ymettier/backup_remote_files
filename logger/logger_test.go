@@ -22,7 +22,7 @@ func TestGetOtherTxtLogFile(t *testing.T) {
 		os.Remove(filename)
 	}
 
-	l := newLogger()
+	l := newLogger(nil)
 	l.Warn("Message")
 	if !assert.FileExists(t, filename) {
 		return
@@ -46,6 +46,6 @@ func TestLogLevel(t *testing.T) {
 	os.Setenv("LOG_LEVEL", "DEBUG")
 	defer os.Unsetenv("LOG_LEVEL")
 
-	l := newLogger()
+	l := newLogger(nil)
 	assert.True(t, l.Enabled(nil, -4)) // slog.LevelDebug is -4
 }

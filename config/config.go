@@ -10,8 +10,9 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/alecthomas/kong"
 	"log/slog"
+
+	"github.com/alecthomas/kong"
 	"gopkg.in/yaml.v3"
 )
 
@@ -95,47 +96,63 @@ func New(version string) (Config, error) {
 	return cfg, nil
 }
 
+func loggerConfig(logging map[string]any) logger.LogOptions {
+	logOpts := logger.LogOptions{
+		Level:      "INFO",
+		Filename:   "",
+		MaxSize:    5,
+		MaxBackups: 10,
+		MaxAge:     14,
+		Compress:   true,
+		JSON:       false,
+	}
+
+	if level, ok := logging["level"].(string); ok {
+		logOpts.Level = level
+	}
+	if filename, ok := logging["filename"].(string); ok {
+		logOpts.Filename = filename
+	}
+	if maxSize, ok := logging["maxSize"].(int); ok {
+		logOpts.MaxSize = maxSize
+	}
+	if maxBackups, ok := logging["maxBackups"].(int); ok {
+		logOpts.MaxBackups = maxBackups
+	}
+	if maxAge, ok := logging["maxAge"].(int); ok {
+		logOpts.MaxAge = maxAge
+	}
+	if compress, ok := logging["compress"].(bool); ok {
+		logOpts.Compress = compress
+	}
+	if isJSON, ok := logging["json"].(bool); ok {
+		logOpts.JSON = isJSON
+	}
+	return logOpts
+}
+
 func (c *Config) readConfig(filename string) error {
 	var data map[string]any
 	l := logger.Get()
 	yamlFile, err := os.ReadFile(filename)
 	if err != nil {
-		l.Error("Failed to read configuration file", slog.String("file", filename), slog.Any("error", err)); os.Exit(1)
+		l.Error("Failed to read configuration file", slog.String("file", filename), slog.Any("error", err))
+		os.Exit(1)
 		return err
 	}
 
 	err = yaml.Unmarshal(yamlFile, &data)
+	if err != nil {
+		l.Error("Failed to parse configuration file", slog.String("file", filename), slog.Any("error", err))
+		os.Exit(1)
+		return err
+	}
 
 	// Logging configuration
 	if logging, ok := data["logging"].(map[string]any); ok {
-		var logOpts logger.LogOptions
-		if level, ok := logging["level"].(string); ok {
-			logOpts.Level = level
-		}
-		if filename, ok := logging["filename"].(string); ok {
-			logOpts.Filename = filename
-		}
-		if maxSize, ok := logging["maxSize"].(int); ok {
-			logOpts.MaxSize = maxSize
-		}
-		if maxBackups, ok := logging["maxBackups"].(int); ok {
-			logOpts.MaxBackups = maxBackups
-		}
-		if maxAge, ok := logging["maxAge"].(int); ok {
-			logOpts.MaxAge = maxAge
-		}
-		if compress, ok := logging["compress"].(bool); ok {
-			logOpts.Compress = compress
-		}
-		if isJSON, ok := logging["json"].(bool); ok {
-			logOpts.JSON = isJSON
-		}
+		logOpts := loggerConfig(logging)
 		logger.Reset(&logOpts)
 		l = logger.Get() // Update local logger reference
-	}
-	if err != nil {
-		l.Error("Failed to parse configuration file", slog.String("file", filename), slog.Any("error", err)); os.Exit(1)
-		return err
 	}
 	// Configuration file format
 	//
@@ -148,6 +165,14 @@ func (c *Config) readConfig(filename string) error {
 	// interval: "1h" // default "1d"
 	// retryInterval: "5m" // default "1h"
 	// metricsPrefix: "backupremotefiles"
+	// logging:
+	//   level: <log level>            // default "info"
+	//   filename: <log filename>      // default ""
+	//   maxSize: <max log size>       // default 5
+	//   maxBackups: <max log backups> // Default 10
+	//   maxAge: <max log age>         // Default 14
+	//   compress: <compress log>      // Default true
+	//   json: <log in JSON>           // Default false
 
 	// parse backups
 
@@ -161,7 +186,8 @@ func (c *Config) readConfig(filename string) error {
 	} else {
 		c.Interval, err = time.ParseDuration("1d")
 		if err != nil {
-			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err)); os.Exit(1)
+			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err))
+			os.Exit(1)
 			return err
 		}
 	}
@@ -177,7 +203,8 @@ func (c *Config) readConfig(filename string) error {
 	} else {
 		c.RetryInterval, err = time.ParseDuration("1d")
 		if err != nil {
-			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err)); os.Exit(1)
+			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err))
+			os.Exit(1)
 			return err
 		}
 	}

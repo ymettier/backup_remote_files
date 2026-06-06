@@ -7,7 +7,6 @@ import (
 	"log"
 	"log/slog"
 	"os"
-	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -33,17 +32,6 @@ type LogOptions struct {
 	MaxBackups int
 	MaxAge     int
 	Compress   bool
-}
-
-func getGitRevision() string {
-	if buildInfo, ok := debug.ReadBuildInfo(); ok {
-		for _, v := range buildInfo.Settings {
-			if v.Key == "vcs.revision" {
-				return v.Value
-			}
-		}
-	}
-	return ""
 }
 
 // newLogger creates a new logger based on opts or environment variables if opts is nil.

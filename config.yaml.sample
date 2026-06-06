@@ -10,9 +10,10 @@ retryInterval: "10m"
 metricsPrefix: "brf"
 
 logging:
-  level: INFO
-  filename: backup.log
-  maxSize: 10      # Megabytes before rotation
-  maxBackups: 5    # Number of old log files to keep
-  maxAge: 7        # Days to keep old log files
-  compress: true   # Compress rotated files
+  level: INFO          # Log level (DEBUG, INFO, WARN, ERROR)
+  filename: backup.log # or "stdout" or "stderr"
+  maxSize: 10          # Megabytes before rotation
+  maxBackups: 5        # Number of old log files to keep
+  maxAge: 7            # Days to keep old log files
+  compress: true       # Compress rotated files
+  json: false          # Log in JSON

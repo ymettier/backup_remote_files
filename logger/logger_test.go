@@ -4,6 +4,7 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -80,5 +81,5 @@ func TestLogLevel(t *testing.T) {
 	defer os.Unsetenv("LOG_LEVEL")
 
 	l := newLogger(nil)
-	assert.True(t, l.Enabled(nil, -4)) // slog.LevelDebug is -4
+	assert.True(t, l.Enabled(context.Background(), -4)) // slog.LevelDebug is -4
 }

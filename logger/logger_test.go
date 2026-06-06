@@ -4,6 +4,7 @@
 package logger
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -38,6 +39,40 @@ func TestGetOtherTxtLogFile(t *testing.T) {
 
 	assert.Contains(t, string(byteValue), "level=WARN")
 	assert.Contains(t, string(byteValue), "msg=Message")
+}
+
+func TestGetOtherJsonLogFile(t *testing.T) {
+	filename := "json_test.log"
+
+	// Remove the logs file before the test
+	if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
+		os.Remove(filename)
+	}
+
+	l := newLogger(&LogOptions{Filename: filename, JSON: true})
+	l.Warn("Message")
+	if !assert.FileExists(t, filename) {
+		return
+	}
+
+	defer os.Remove(filename)
+
+	jsonFile, err := os.Open(filename)
+	if !assert.NoError(t, err) {
+		return
+	}
+
+	defer jsonFile.Close()
+	byteValue, _ := io.ReadAll(jsonFile)
+
+	// Ensure that the content of the file is in json format
+	assert.True(t, json.Valid(byteValue))
+
+	var result map[string]any
+	err = json.Unmarshal(byteValue, &result)
+	assert.NoError(t, err)
+	assert.Equal(t, "WARN", result["level"])
+	assert.Equal(t, "Message", result["msg"])
 }
 
 func TestLogLevel(t *testing.T) {

@@ -127,6 +127,9 @@ func (c *Config) readConfig(filename string) error {
 		if compress, ok := logging["compress"].(bool); ok {
 			logOpts.Compress = compress
 		}
+		if isJSON, ok := logging["json"].(bool); ok {
+			logOpts.JSON = isJSON
+		}
 		logger.Reset(&logOpts)
 		l = logger.Get() // Update local logger reference
 	}

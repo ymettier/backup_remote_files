@@ -14,15 +14,13 @@ import (
 
 func TestGetOtherTxtLogFile(t *testing.T) {
 	filename := "txt_test.log"
-	os.Setenv("LOG_TXT_FILENAME", filename)
-	defer os.Unsetenv("LOG_TXT_FILENAME")
 
 	// Remove the logs file before the test
 	if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
 		os.Remove(filename)
 	}
 
-	l := newLogger(nil)
+	l := newLogger(&LogOptions{Filename: filename})
 	l.Warn("Message")
 	if !assert.FileExists(t, filename) {
 		return

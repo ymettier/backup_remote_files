@@ -43,23 +43,11 @@ podman run --rm -it \
 
 See config.yaml.sample
 
+Note: `logging.filename` can be set to one of `stdout`, `stderr` or a filename. If a filename is set, rotation of the log file will be automatically performed.
+
 ## Environment variables
 
 - `LOG_LEVEL`: log level
-- `LOG_TXT_FILENAME`: filename for plain text logs.
-- `LOG_JSON_FILENAME`: filename for json logs.
-
-## Log management
-
-The files specified in `LOG_TXT_FILENAME` and/or `LOG_JSON_FILENAME` can be either
-
-- a file name
-- `stdout`
-- `stderr`
-
-If a file name is specified, a log rotation will be performed.
-
-If none of `LOG_TXT_FILENAME` or `LOG_JSON_FILENAME` is specified, logs will be output to `stdout`, same as `LOG_TXT_FILENAME=stdout`.
 
 ## Build
 

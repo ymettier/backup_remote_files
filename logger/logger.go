@@ -26,6 +26,7 @@ type Logger struct {
 }
 
 type LogOptions struct {
+	JSON       bool
 	Level      string
 	Filename   string
 	MaxSize    int
@@ -74,8 +75,6 @@ func newLogger(opts *LogOptions) *Logger {
 	var filename string
 	if opts != nil && opts.Filename != "" {
 		filename = opts.Filename
-	} else {
-		filename = os.Getenv("LOG_TXT_FILENAME")
 	}
 
 	if filename != "" {
@@ -110,7 +109,13 @@ func newLogger(opts *LogOptions) *Logger {
 	}
 
 	// Create new logger
-	return &Logger{slog.New(slog.NewTextHandler(w, handlerOpts))}
+	var handler slog.Handler
+	if opts != nil && opts.JSON {
+		handler = slog.NewJSONHandler(w, handlerOpts)
+	} else {
+		handler = slog.NewTextHandler(w, handlerOpts)
+	}
+	return &Logger{slog.New(handler)}
 }
 
 // Get initializes a Logger instance if it has not been initialized

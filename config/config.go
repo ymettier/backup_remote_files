@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
-	"go.uber.org/zap"
+	"log/slog"
 	"gopkg.in/yaml.v3"
 )
 
@@ -100,13 +100,13 @@ func (c *Config) readConfig(filename string) error {
 	l := logger.Get()
 	yamlFile, err := os.ReadFile(filename)
 	if err != nil {
-		l.Fatal("Failed to read configuration file", zap.String("file", filename), zap.Error(err))
+		l.Error("Failed to read configuration file", slog.String("file", filename), slog.Any("error", err)); os.Exit(1)
 		return err
 	}
 
 	err = yaml.Unmarshal(yamlFile, &data)
 	if err != nil {
-		l.Fatal("Failed to parse configuration file", zap.String("file", filename), zap.Error(err))
+		l.Error("Failed to parse configuration file", slog.String("file", filename), slog.Any("error", err)); os.Exit(1)
 		return err
 	}
 	// Configuration file format
@@ -127,33 +127,33 @@ func (c *Config) readConfig(filename string) error {
 	if _, ok := data["interval"]; ok {
 		c.Interval, err = time.ParseDuration(data["interval"].(string))
 		if err != nil {
-			l.Error("Failed to parse duration 'interval'", zap.Error(err))
+			l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
 			return err
 		}
 	} else {
 		c.Interval, err = time.ParseDuration("1d")
 		if err != nil {
-			l.Fatal("Failed to generate duration 'interval' from default value. THIS IS A BUG", zap.Error(err))
+			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err)); os.Exit(1)
 			return err
 		}
 	}
-	l.Info("Config: interval", zap.String("interval", c.Interval.String()))
+	l.Info("Config: interval", slog.String("interval", c.Interval.String()))
 
 	// RetryInterval
 	if _, ok := data["retryInterval"]; ok {
 		c.RetryInterval, err = time.ParseDuration(data["retryInterval"].(string))
 		if err != nil {
-			l.Error("Failed to parse duration 'retryInterval'", zap.Error(err))
+			l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
 			return err
 		}
 	} else {
 		c.RetryInterval, err = time.ParseDuration("1d")
 		if err != nil {
-			l.Fatal("Failed to generate duration 'interval' from default value. THIS IS A BUG", zap.Error(err))
+			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err)); os.Exit(1)
 			return err
 		}
 	}
-	l.Info("Config: retryInterval", zap.String("retryInterval", c.RetryInterval.String()))
+	l.Info("Config: retryInterval", slog.String("retryInterval", c.RetryInterval.String()))
 
 	// Metrics prefix
 	if _, ok := data["metricsPrefix"]; ok {
@@ -161,7 +161,7 @@ func (c *Config) readConfig(filename string) error {
 	} else {
 		c.MetricsPrefix = "backupremotefiles"
 	}
-	l.Info("Config: metricsPrefix", zap.String("metricsPrefix", c.RetryInterval.String()))
+	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.RetryInterval.String()))
 
 	c.Backups = make([]Backup, 0)
 	for id, v := range data["backups"].(map[string]any) {
@@ -174,7 +174,7 @@ func (c *Config) readConfig(filename string) error {
 		b.OutputFile = fb["outputFile"].(string)
 		b.RetrieveSuccess = true // initialize status in safe state
 		c.Backups = append(c.Backups, b)
-		l.Info("Config: backup url", zap.String("url", b.URL))
+		l.Info("Config: backup url", slog.String("url", b.URL))
 	}
 	return nil
 }

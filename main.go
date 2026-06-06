@@ -17,7 +17,7 @@ import (
 
 	_ "embed"
 
-	"go.uber.org/zap"
+	"log/slog"
 )
 
 var (
@@ -111,46 +111,46 @@ func backupFile(id, url, username, password, outputFile string) (retrieveSuccess
 	l := logger.Get()
 	req, err := http.NewRequestWithContext(context.Background(), "GET", url, http.NoBody)
 	if err != nil {
-		l.Error("Failed to create new request", zap.String("id", id), zap.String("url", url), zap.Error(err))
+		l.Error("Failed to create new request", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
 		return false, err
 	}
 	req.SetBasicAuth(username, password)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		l.Error("Failed to read data", zap.String("id", id), zap.String("url", url), zap.Error(err))
+		l.Error("Failed to read data", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
 		return false, err
 	}
 	defer resp.Body.Close()
 
 	outputFileFD, err := os.Create(outputFile + ".part")
 	if err != nil {
-		l.Error("Failed to open file for writing", zap.String("id", id), zap.String("filename", outputFile), zap.Error(err))
+		l.Error("Failed to open file for writing", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
 		return true, err
 	}
 	defer outputFileFD.Close()
 	if _, err = io.Copy(outputFileFD, resp.Body); err != nil {
-		l.Error("Failed to write contents to file", zap.String("id", id), zap.String("filename", outputFile))
+		l.Error("Failed to write contents to file", slog.String("id", id), slog.String("filename", outputFile))
 		return true, err
 	}
 	outputFileFD.Close()
 
 	// code 300 is http.StatusMultipleChoices
 	if resp.StatusCode >= http.StatusMultipleChoices {
-		l.Error("Request returned HTTP status code >= 300", zap.String("id", id), zap.String("url", url), zap.Int("status", resp.StatusCode))
+		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
 		os.Remove(outputFile + ".part")
 		return false, nil
 	} else {
 		err := os.Rename(outputFile+".part", outputFile)
 		if err != nil {
 			l.Error("Failed to rename file",
-				zap.String("id", id),
-				zap.String("oldFilename", outputFile+".part"),
-				zap.String("newFilename", outputFile),
+				slog.String("id", id),
+				slog.String("oldFilename", outputFile+".part"),
+				slog.String("newFilename", outputFile),
 			)
 			return true, err
 		}
-		l.Info("Successfully retrieved file", zap.String("id", id), zap.String("filename", outputFile))
+		l.Info("Successfully retrieved file", slog.String("id", id), slog.String("filename", outputFile))
 	}
 	return true, nil
 }
@@ -159,7 +159,7 @@ func fileSize(filename string) (int64, error) {
 	l := logger.Get()
 	fi, err := os.Stat(filename)
 	if err != nil {
-		l.Error("Failed to get file stats", zap.String("filename", filename), zap.Error(err))
+		l.Error("Failed to get file stats", slog.String("filename", filename), slog.Any("error", err))
 		return 0, err
 	}
 	return fi.Size(), nil
@@ -179,7 +179,7 @@ func retrieveUrls(cfg config.Config, metric *metrics, retrieveAll bool) (allRetr
 			continue
 		}
 		if !retrieveAll {
-			l.Info("Retrying...", zap.String("id", backup.ID))
+			l.Info("Retrying...", slog.String("id", backup.ID))
 		}
 		cfg.Backups[id].RetrieveSuccess = true
 		if RetrieveSuccess, err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
@@ -259,9 +259,9 @@ func main() {
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
-	l.Info("Starting exporter HTTP server", zap.Int("port", cfg.Port))
+	l.Info("Starting exporter HTTP server", slog.Int("port", cfg.Port))
 	err = server.ListenAndServe()
 	if err != nil {
-		l.Fatal("Could not start exporter HTTP server", zap.Error(err))
+		l.Error("Could not start exporter HTTP server", slog.Any("error", err)); os.Exit(1)
 	}
 }

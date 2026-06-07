@@ -10,8 +10,9 @@ import (
 	"runtime/debug"
 	"time"
 
+	"log/slog"
+
 	"github.com/alecthomas/kong"
-	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
@@ -95,19 +96,63 @@ func New(version string) (Config, error) {
 	return cfg, nil
 }
 
+func loggerConfig(logging map[string]any) logger.LogOptions {
+	logOpts := logger.LogOptions{
+		Level:      "INFO",
+		Filename:   "",
+		MaxSize:    5,
+		MaxBackups: 10,
+		MaxAge:     14,
+		Compress:   true,
+		JSON:       false,
+	}
+
+	if level, ok := logging["level"].(string); ok {
+		logOpts.Level = level
+	}
+	if filename, ok := logging["filename"].(string); ok {
+		logOpts.Filename = filename
+	}
+	if maxSize, ok := logging["maxSize"].(int); ok {
+		logOpts.MaxSize = maxSize
+	}
+	if maxBackups, ok := logging["maxBackups"].(int); ok {
+		logOpts.MaxBackups = maxBackups
+	}
+	if maxAge, ok := logging["maxAge"].(int); ok {
+		logOpts.MaxAge = maxAge
+	}
+	if compress, ok := logging["compress"].(bool); ok {
+		logOpts.Compress = compress
+	}
+	if isJSON, ok := logging["json"].(bool); ok {
+		logOpts.JSON = isJSON
+	}
+	return logOpts
+}
+
 func (c *Config) readConfig(filename string) error {
 	var data map[string]any
 	l := logger.Get()
 	yamlFile, err := os.ReadFile(filename)
 	if err != nil {
-		l.Fatal("Failed to read configuration file", zap.String("file", filename), zap.Error(err))
+		l.Error("Failed to read configuration file", slog.String("file", filename), slog.Any("error", err))
+		os.Exit(1)
 		return err
 	}
 
 	err = yaml.Unmarshal(yamlFile, &data)
 	if err != nil {
-		l.Fatal("Failed to parse configuration file", zap.String("file", filename), zap.Error(err))
+		l.Error("Failed to parse configuration file", slog.String("file", filename), slog.Any("error", err))
+		os.Exit(1)
 		return err
+	}
+
+	// Logging configuration
+	if logging, ok := data["logging"].(map[string]any); ok {
+		logOpts := loggerConfig(logging)
+		logger.Reset(&logOpts)
+		l = logger.Get() // Update local logger reference
 	}
 	// Configuration file format
 	//
@@ -120,6 +165,14 @@ func (c *Config) readConfig(filename string) error {
 	// interval: "1h" // default "1d"
 	// retryInterval: "5m" // default "1h"
 	// metricsPrefix: "backupremotefiles"
+	// logging:
+	//   level: <log level>            // default "info"
+	//   filename: <log filename>      // default ""
+	//   maxSize: <max log size>       // default 5
+	//   maxBackups: <max log backups> // Default 10
+	//   maxAge: <max log age>         // Default 14
+	//   compress: <compress log>      // Default true
+	//   json: <log in JSON>           // Default false
 
 	// parse backups
 
@@ -127,33 +180,35 @@ func (c *Config) readConfig(filename string) error {
 	if _, ok := data["interval"]; ok {
 		c.Interval, err = time.ParseDuration(data["interval"].(string))
 		if err != nil {
-			l.Error("Failed to parse duration 'interval'", zap.Error(err))
+			l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
 			return err
 		}
 	} else {
 		c.Interval, err = time.ParseDuration("1d")
 		if err != nil {
-			l.Fatal("Failed to generate duration 'interval' from default value. THIS IS A BUG", zap.Error(err))
+			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err))
+			os.Exit(1)
 			return err
 		}
 	}
-	l.Info("Config: interval", zap.String("interval", c.Interval.String()))
+	l.Info("Config: interval", slog.String("interval", c.Interval.String()))
 
 	// RetryInterval
 	if _, ok := data["retryInterval"]; ok {
 		c.RetryInterval, err = time.ParseDuration(data["retryInterval"].(string))
 		if err != nil {
-			l.Error("Failed to parse duration 'retryInterval'", zap.Error(err))
+			l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
 			return err
 		}
 	} else {
 		c.RetryInterval, err = time.ParseDuration("1d")
 		if err != nil {
-			l.Fatal("Failed to generate duration 'interval' from default value. THIS IS A BUG", zap.Error(err))
+			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err))
+			os.Exit(1)
 			return err
 		}
 	}
-	l.Info("Config: retryInterval", zap.String("retryInterval", c.RetryInterval.String()))
+	l.Info("Config: retryInterval", slog.String("retryInterval", c.RetryInterval.String()))
 
 	// Metrics prefix
 	if _, ok := data["metricsPrefix"]; ok {
@@ -161,7 +216,7 @@ func (c *Config) readConfig(filename string) error {
 	} else {
 		c.MetricsPrefix = "backupremotefiles"
 	}
-	l.Info("Config: metricsPrefix", zap.String("metricsPrefix", c.RetryInterval.String()))
+	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.RetryInterval.String()))
 
 	c.Backups = make([]Backup, 0)
 	for id, v := range data["backups"].(map[string]any) {
@@ -174,7 +229,7 @@ func (c *Config) readConfig(filename string) error {
 		b.OutputFile = fb["outputFile"].(string)
 		b.RetrieveSuccess = true // initialize status in safe state
 		c.Backups = append(c.Backups, b)
-		l.Info("Config: backup url", zap.String("url", b.URL))
+		l.Info("Config: backup url", slog.String("url", b.URL))
 	}
 	return nil
 }

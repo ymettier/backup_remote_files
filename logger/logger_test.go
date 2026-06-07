@@ -4,6 +4,7 @@
 package logger
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,15 +16,13 @@ import (
 
 func TestGetOtherTxtLogFile(t *testing.T) {
 	filename := "txt_test.log"
-	os.Setenv("LOG_TXT_FILENAME", filename)
-	defer os.Unsetenv("LOG_TXT_FILENAME")
 
 	// Remove the logs file before the test
 	if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
 		os.Remove(filename)
 	}
 
-	l := newLogger()
+	l := newLogger(&LogOptions{Filename: filename})
 	l.Warn("Message")
 	if !assert.FileExists(t, filename) {
 		return
@@ -39,27 +38,19 @@ func TestGetOtherTxtLogFile(t *testing.T) {
 	defer txtFile.Close()
 	byteValue, _ := io.ReadAll(txtFile)
 
-	// result :
-	// 2024-05-31T15:12:28.592+0200	WARN	Message
-	if !assert.Contains(t, string(byteValue), "WARN") {
-		return
-	}
-	if !assert.Contains(t, string(byteValue), "Message") {
-		return
-	}
+	assert.Contains(t, string(byteValue), "level=WARN")
+	assert.Contains(t, string(byteValue), "msg=Message")
 }
 
 func TestGetOtherJsonLogFile(t *testing.T) {
 	filename := "json_test.log"
-	os.Setenv("LOG_JSON_FILENAME", filename)
-	defer os.Unsetenv("LOG_JSON_FILENAME")
 
 	// Remove the logs file before the test
 	if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
 		os.Remove(filename)
 	}
 
-	l := newLogger()
+	l := newLogger(&LogOptions{Filename: filename, JSON: true})
 	l.Warn("Message")
 	if !assert.FileExists(t, filename) {
 		return
@@ -75,14 +66,20 @@ func TestGetOtherJsonLogFile(t *testing.T) {
 	defer jsonFile.Close()
 	byteValue, _ := io.ReadAll(jsonFile)
 
+	// Ensure that the content of the file is in json format
+	assert.True(t, json.Valid(byteValue))
+
 	var result map[string]any
-	if err = json.Unmarshal(byteValue, &result); !assert.NoError(t, err) {
-		return
-	}
-	// result :
-	// {"level":"warn","timestamp":"2024-05-31T16:04:38.853+0200","msg":"Message","git_revision":"","go_version":"go1.22.3"}
-	if !assert.Contains(t, result, "msg") {
-		return
-	}
-	assert.Equal(t, result["msg"], "Message")
+	err = json.Unmarshal(byteValue, &result)
+	assert.NoError(t, err)
+	assert.Equal(t, "WARN", result["level"])
+	assert.Equal(t, "Message", result["msg"])
+}
+
+func TestLogLevel(t *testing.T) {
+	os.Setenv("LOG_LEVEL", "DEBUG")
+	defer os.Unsetenv("LOG_LEVEL")
+
+	l := newLogger(nil)
+	assert.True(t, l.Enabled(context.Background(), -4)) // slog.LevelDebug is -4
 }

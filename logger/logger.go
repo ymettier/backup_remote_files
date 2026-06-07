@@ -1,156 +1,147 @@
-// Copyright 2023 The Backup_remote_files Authors. All rights reserved.
-// SPDX-License-Identifier: MIT
-
 package logger
 
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"log/slog"
 	"os"
-	"runtime"
-	"runtime/debug"
+	"strings"
 	"sync"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 type ctxKey struct{}
 
-var once sync.Once
+var (
+	mu     sync.RWMutex
+	logger *Logger
+)
 
-var logger *zap.Logger
-
-func getGitRevision() string {
-	buildInfo, ok := debug.ReadBuildInfo()
-	if !ok {
-		return ""
-	}
-	for _, v := range buildInfo.Settings {
-		if v.Key == "vcs.revision" {
-			return v.Value
-		}
-	}
-	return ""
+type Logger struct {
+	*slog.Logger
 }
 
-// Loggers are defined with these environment variables:
-// - LOG_TXT_FILENAME
-// - LOG_JSON_FILENAME
-//
-// The value can be either "stdout", "stderr" or a filename.
-//
-// LOG_LEVEL environment variable sets the log level.
-func newLogger() *zap.Logger {
+type LogOptions struct {
+	JSON       bool
+	Level      string
+	Filename   string
+	MaxSize    int
+	MaxBackups int
+	MaxAge     int
+	Compress   bool
+}
+
+// newLogger creates a new logger based on opts or environment variables if opts is nil.
+func newLogger(opts *LogOptions) *Logger {
 	// Define log level
-	level := zap.InfoLevel
-	levelEnv := os.Getenv("LOG_LEVEL")
-	if levelEnv != "" {
-		levelFromEnv, err := zapcore.ParseLevel(levelEnv)
-		if err != nil {
-			log.Println(
-				fmt.Errorf("invalid level, defaulting to INFO: %w", err),
-			)
-		}
-		level = levelFromEnv
+	level := slog.LevelInfo
+	var levelStr string
+	if opts != nil && opts.Level != "" {
+		levelStr = opts.Level
+	} else {
+		levelStr = os.Getenv("LOG_LEVEL")
 	}
 
-	logLevel := zap.NewAtomicLevelAt(level)
+	if levelStr != "" {
+		var l slog.Level
+		if err := l.UnmarshalText([]byte(strings.ToUpper(levelStr))); err != nil {
+			log.Println(fmt.Errorf("invalid level, defaulting to INFO: %w", err))
+		} else {
+			level = l
+		}
+	}
 
-	// Define logFd for outputs
-	logFd := make(map[string]zapcore.WriteSyncer)
-	for _, t := range []string{"TXT", "JSON"} {
-		filename := os.Getenv("LOG_" + t + "_FILENAME")
+	handlerOpts := &slog.HandlerOptions{
+		Level: level,
+	}
 
-		if filename != "" {
-			switch filename {
-			case "stdout":
-				logFd[t] = zapcore.AddSync(os.Stdout)
-			case "stderr":
-				logFd[t] = zapcore.AddSync(os.Stderr)
-			default:
-				logFd[t] = zapcore.AddSync(&lumberjack.Logger{
-					Filename:   filename,
-					MaxSize:    5,
-					MaxBackups: 10,
-					MaxAge:     14,
-					Compress:   true,
-				})
+	// Define log writer
+	var w io.Writer = os.Stderr
+	var filename string
+	if opts != nil && opts.Filename != "" {
+		filename = opts.Filename
+	}
+
+	if filename != "" {
+		switch filename {
+		case "stdout":
+			w = os.Stdout
+		case "stderr":
+			w = os.Stderr
+		default:
+			l := &lumberjack.Logger{
+				Filename: filename,
 			}
+			if opts != nil {
+				l.MaxSize = opts.MaxSize
+				l.MaxBackups = opts.MaxBackups
+				l.MaxAge = opts.MaxAge
+				l.Compress = opts.Compress
+			} else {
+				// Defaults if no opts provided
+				l.MaxSize = 5
+				l.MaxBackups = 10
+				l.MaxAge = 14
+				l.Compress = true
+			}
+			w = l
 		}
-	}
-	if len(logFd) == 0 {
-		logFd["TXT"] = zapcore.AddSync(os.Stderr)
-	}
-
-	// Define main core
-	core := zapcore.NewTee()
-
-	// Define and append TXT logger core
-	if _, ok := logFd["TXT"]; ok {
-		loggerTxtCfg := zap.NewDevelopmentEncoderConfig()
-		loggerTxtCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		loggerTxtEncoder := zapcore.NewConsoleEncoder(loggerTxtCfg)
-		loggerCore := zapcore.NewCore(loggerTxtEncoder, logFd["TXT"], logLevel)
-		core = zapcore.NewTee(core, loggerCore)
+	} else if opts != nil {
+		// If filename is empty in opts, it means we might want to default to stderr
+		// or maybe the user just didn't specify it in the config file.
+		// If we are here, filename is empty.
+		w = os.Stderr
 	}
 
-	// Define JSON logger core
-	if _, ok := logFd["JSON"]; ok {
-		loggerJSONCfg := zap.NewProductionEncoderConfig()
-		loggerJSONCfg.TimeKey = "timestamp"
-		loggerJSONCfg.EncodeTime = zapcore.ISO8601TimeEncoder
-		loggerJSONEncoder := zapcore.NewJSONEncoder(loggerJSONCfg)
-
-		gitRevision := getGitRevision()
-
-		loggerCore := zapcore.NewCore(loggerJSONEncoder, logFd["JSON"], logLevel).
-			With(
-				[]zapcore.Field{
-					zap.String("git_revision", gitRevision),
-					zap.String("go_version", runtime.Version()),
-				},
-			)
-		core = zapcore.NewTee(core, loggerCore)
+	// Create new logger
+	var handler slog.Handler
+	if opts != nil && opts.JSON {
+		handler = slog.NewJSONHandler(w, handlerOpts)
+	} else {
+		handler = slog.NewTextHandler(w, handlerOpts)
 	}
-
-	// Create new zap
-	return zap.New(core)
+	return &Logger{slog.New(handler)}
 }
 
-// Get initializes a zap.Logger instance if it has not been initialized
+// Get initializes a Logger instance if it has not been initialized
 // already and returns the same instance for subsequent calls.
-func Get() *zap.Logger {
-	once.Do(func() {
-		logger = newLogger()
-	})
+func Get() *Logger {
+	mu.RLock()
+	l := logger
+	mu.RUnlock()
 
+	if l != nil {
+		return l
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if logger == nil {
+		logger = newLogger(nil)
+	}
 	return logger
 }
 
+// Reset re-initializes the global logger with the provided options.
+func Reset(opts *LogOptions) {
+	mu.Lock()
+	defer mu.Unlock()
+	logger = newLogger(opts)
+}
+
 // FromCtx returns the Logger associated with the ctx. If no logger
-// is associated, the default logger is returned, unless it is nil
-// in which case a disabled logger is returned.
-func FromCtx(ctx context.Context) *zap.Logger {
-	if l, ok := ctx.Value(ctxKey{}).(*zap.Logger); ok {
-		return l
-	} else if l := logger; l != nil {
+// is associated, the default logger is returned.
+func FromCtx(ctx context.Context) *Logger {
+	if l, ok := ctx.Value(ctxKey{}).(*Logger); ok {
 		return l
 	}
-
-	return zap.NewNop()
+	return Get()
 }
 
 // WithCtx returns a copy of ctx with the Logger attached.
-func WithCtx(ctx context.Context, l *zap.Logger) context.Context {
-	if lp, ok := ctx.Value(ctxKey{}).(*zap.Logger); ok {
-		if lp == l {
-			// Do not store same logger.
-			return ctx
-		}
-	}
-
+func WithCtx(ctx context.Context, l *Logger) context.Context {
 	return context.WithValue(ctx, ctxKey{}, l)
 }

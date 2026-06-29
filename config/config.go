@@ -5,7 +5,6 @@ package config
 
 import (
 	"backup_remote_files/logger"
-	"flag"
 	"fmt"
 	"os"
 	"runtime/debug"
@@ -18,6 +17,7 @@ import (
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
+	"github.com/spf13/pflag"
 )
 
 const defaultPort = 9289
@@ -62,45 +62,37 @@ type CLIFlags struct {
 }
 
 func parseFlags(version string) CLIFlags {
-	fs := flag.NewFlagSet("backup_remote_files", flag.ContinueOnError)
+	fs := pflag.NewFlagSet("backup_remote_files", pflag.ContinueOnError)
 
-	configFile := fs.String("c", "", "Configuration file (required)")
-	configFile2 := fs.String("config", "", "Configuration file (required)")
-	port := fs.Int("p", defaultPort, "Exporter port")
-	port2 := fs.Int("port", defaultPort, "Exporter port")
-	showVersion := fs.Bool("V", false, "Show version info")
-	showVersion2 := fs.Bool("version", false, "Show version info")
+	configFile := fs.StringP("config", "c", "", "Configuration file (required)")
+	port := fs.IntP("port", "p", defaultPort, "Exporter port")
+	showVersion := fs.BoolP("version", "V", false, "Show version info")
+	showHelp := fs.BoolP("help", "h", false, "Print help")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Handle flags with priority for short form
-	config := *configFile
-	if config == "" {
-		config = *configFile2
+	if *showHelp {
+		fs.PrintDefaults()
+		os.Exit(0)
 	}
 
-	portVal := *port
-	if portVal == defaultPort && *port2 != defaultPort {
-		portVal = *port2
-	}
-
-	if *showVersion || *showVersion2 {
+	if *showVersion {
 		output := printVersion(version)
 		fmt.Printf("%s", output)
 		os.Exit(0)
 	}
 
-	if config == "" {
+	if *configFile == "" {
 		fmt.Fprintf(os.Stderr, "Error: -c/--config is required\n")
 		os.Exit(1)
 	}
 
 	return CLIFlags{
-		ConfigFile: config,
-		Port:       portVal,
+		ConfigFile: *configFile,
+		Port:       *port,
 	}
 }
 

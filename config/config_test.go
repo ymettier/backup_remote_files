@@ -4,6 +4,7 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -15,4 +16,45 @@ func TestVersion(t *testing.T) {
 	output := printVersion(wantedVersion)
 	s := strings.Split(output, "\n")
 	assert.Equal(t, "Version        : "+wantedVersion, s[0], "Printing version")
+}
+
+func TestEnvVariableOverrides(t *testing.T) {
+	// Create a test config file
+	configContent := `
+backups:
+  test:
+    url: "http://example.com"
+    username: "user"
+    password: "pass"
+    outputFile: "/tmp/test.out"
+interval: "24h"
+retryInterval: "1h"
+metricsPrefix: "default_prefix"
+`
+	err := os.WriteFile("test_env_config.yaml", []byte(configContent), 0600)
+	assert.Nil(t, err)
+	defer os.Remove("test_env_config.yaml")
+
+	// Set environment variables using camelCase naming (no underscores)
+	os.Setenv("BRF_INTERVAL", "2h")
+	os.Setenv("BRF_RETRYINTERVAL", "30m")
+	os.Setenv("BRF_METRICSPREFIX", "custom_prefix")
+	defer func() {
+		os.Unsetenv("BRF_INTERVAL")
+		os.Unsetenv("BRF_RETRYINTERVAL")
+		os.Unsetenv("BRF_METRICSPREFIX")
+	}()
+
+	// Mock os.Args for the test
+	oldArgs := os.Args
+	os.Args = []string{"test", "-c", "test_env_config.yaml"}
+	defer func() { os.Args = oldArgs }()
+
+	cfg, err := New("test")
+	assert.Nil(t, err)
+
+	// Verify environment variables overrode the config file
+	assert.Equal(t, "2h0m0s", cfg.Interval.String())
+	assert.Equal(t, "30m0s", cfg.RetryInterval.String())
+	assert.Equal(t, "custom_prefix", cfg.MetricsPrefix)
 }

@@ -1,3 +1,11 @@
+# Configuration file for backup_remote_files
+# All parameters can be overridden with environment variables prefixed with "BRF_"
+# Environment variable naming:
+#   - Flat keys (camelCase): convert to UPPERCASE without underscores
+#     Example: retryInterval -> BRF_RETRYINTERVAL, metricsPrefix -> BRF_METRICSPREFIX
+#   - Nested keys (dots): use UPPERCASE with underscores for nesting
+#     Example: logging.level -> BRF_LOGGING_LEVEL
+
 backups:
   someid:
     url: https://some.url/data

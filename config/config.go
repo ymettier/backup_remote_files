@@ -8,15 +8,19 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"log/slog"
 
-	"github.com/alecthomas/kong"
-	"gopkg.in/yaml.v3"
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/v2"
+	"github.com/spf13/pflag"
 )
 
-type VersionFlag bool
+const defaultPort = 9289
 
 func printVersion(version string) string {
 	output := fmt.Sprintf("%-15s: %s\n", "Version", version)
@@ -52,17 +56,44 @@ func printVersion(version string) string {
 	return output
 }
 
-func (v VersionFlag) BeforeReset(version string) error {
-	output := printVersion(version)
-	fmt.Printf("%s", output)
-	os.Exit(0)
-	return nil
+type CLIFlags struct {
+	ConfigFile string
+	Port       int
 }
 
-type CLI struct {
-	ConfigFile string      `name:"config" short:"c" required:"" help:"Configuration file"`
-	Port       int         `name:"port" short:"p" default:"9289" optional:"" help:"Exporter port"`
-	Version    VersionFlag `name:"version" short:"V"  help:"Show version info"`
+func parseFlags(version string) CLIFlags {
+	fs := pflag.NewFlagSet("backup_remote_files", pflag.ContinueOnError)
+
+	configFile := fs.StringP("config", "c", "", "Configuration file (required)")
+	port := fs.IntP("port", "p", defaultPort, "Exporter port")
+	showVersion := fs.BoolP("version", "V", false, "Show version info")
+	showHelp := fs.BoolP("help", "h", false, "Print help")
+
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
+		os.Exit(1)
+	}
+
+	if *showHelp {
+		fs.PrintDefaults()
+		os.Exit(0)
+	}
+
+	if *showVersion {
+		output := printVersion(version)
+		fmt.Printf("%s", output)
+		os.Exit(0)
+	}
+
+	if *configFile == "" {
+		fmt.Fprintf(os.Stderr, "Error: -c/--config is required\n")
+		os.Exit(1)
+	}
+
+	return CLIFlags{
+		ConfigFile: *configFile,
+		Port:       *port,
+	}
 }
 
 type Backup struct {
@@ -83,17 +114,62 @@ type Config struct {
 }
 
 func New(version string) (Config, error) {
-	var cli CLI
-	kong.Parse(&cli, kong.Bind(version))
+	flags := parseFlags(version)
 	var cfg Config
-	cfg.Port = cli.Port
+	cfg.Port = flags.Port
 
-	err := cfg.readConfig(cli.ConfigFile)
+	err := cfg.readConfig(flags.ConfigFile)
 	if err != nil {
 		return cfg, err
 	}
 
 	return cfg, nil
+}
+
+func (c *Config) getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
+	// Check env form (lowercase) first so env vars override YAML values.
+	// Env provider transforms BRF_RETRYINTERVAL -> retryinterval,
+	// while YAML keys use camelCase (retryInterval).
+	envKey := strings.ToLower(camelKey)
+	if k.Exists(envKey) {
+		return k.String(envKey)
+	}
+	// Check YAML form (camelCase for flat keys like "retryInterval")
+	if k.Exists(camelKey) {
+		return k.String(camelKey)
+	}
+	// For nested keys like "logging.level", also check with underscore form
+	// (in case the transformer created underscore version instead of dot)
+	underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
+	if k.Exists(underscoreKey) {
+		return k.String(underscoreKey)
+	}
+	return defaultValue
+}
+
+func (c *Config) getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
+	var durationStr string
+	// Check env form (lowercase) first so env vars override YAML values.
+	envKey := strings.ToLower(camelKey)
+	if k.Exists(envKey) {
+		durationStr = k.String(envKey)
+	} else if k.Exists(camelKey) {
+		durationStr = k.String(camelKey)
+	} else {
+		// For nested keys like "logging.level", also check with underscore form
+		underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
+		if k.Exists(underscoreKey) {
+			durationStr = k.String(underscoreKey)
+		} else {
+			durationStr = defaultDuration
+		}
+	}
+
+	duration, err := time.ParseDuration(durationStr)
+	if err != nil {
+		return 0, err
+	}
+	return duration, nil
 }
 
 func loggerConfig(logging map[string]any) logger.LogOptions {
@@ -132,104 +208,76 @@ func loggerConfig(logging map[string]any) logger.LogOptions {
 }
 
 func (c *Config) readConfig(filename string) error {
-	var data map[string]any
 	l := logger.Get()
-	yamlFile, err := os.ReadFile(filename)
-	if err != nil {
+
+	// Initialize Koanf with YAML parser
+	k := koanf.New(".")
+	if err := k.Load(file.Provider(filename), yaml.Parser()); err != nil {
 		l.Error("Failed to read configuration file", slog.String("file", filename), slog.Any("error", err))
 		os.Exit(1)
 		return err
 	}
 
-	err = yaml.Unmarshal(yamlFile, &data)
-	if err != nil {
-		l.Error("Failed to parse configuration file", slog.String("file", filename), slog.Any("error", err))
+	// Load environment variables with BRF_ prefix (overrides YAML values)
+	// For flat keys: BRF_RETRYINTERVAL -> retryInterval, BRF_INTERVAL -> interval
+	// For nested keys: BRF_LOGGING_LEVEL -> logging.level
+	if err := k.Load(env.Provider("BRF_", ".", func(s string) string {
+		// Remove BRF_ prefix
+		s = strings.TrimPrefix(s, "BRF_")
+		// Convert to lowercase
+		s = strings.ToLower(s)
+		// Replace underscores with dots for nested keys
+		s = strings.ReplaceAll(s, "_", ".")
+		return s
+	}), nil); err != nil {
+		l.Error("Failed to load environment variables", slog.Any("error", err))
 		os.Exit(1)
 		return err
 	}
 
 	// Logging configuration
-	if logging, ok := data["logging"].(map[string]any); ok {
+	if k.Exists("logging") {
+		logging := k.Get("logging").(map[string]any)
 		logOpts := loggerConfig(logging)
 		logger.Reset(&logOpts)
 		l = logger.Get() // Update local logger reference
 	}
-	// Configuration file format
-	//
-	// backups:
-	//   - url: <some url>
-	//     username: <some username>
-	//     password: <some password>
-	//     outputFile: <output file>
-	//
-	// interval: "1h" // default "1d"
-	// retryInterval: "5m" // default "1h"
-	// metricsPrefix: "backupremotefiles"
-	// logging:
-	//   level: <log level>            // default "info"
-	//   filename: <log filename>      // default ""
-	//   maxSize: <max log size>       // default 5
-	//   maxBackups: <max log backups> // Default 10
-	//   maxAge: <max log age>         // Default 14
-	//   compress: <compress log>      // Default true
-	//   json: <log in JSON>           // Default false
-
-	// parse backups
-
 	// Interval
-	if _, ok := data["interval"]; ok {
-		c.Interval, err = time.ParseDuration(data["interval"].(string))
-		if err != nil {
-			l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
-			return err
-		}
-	} else {
-		c.Interval, err = time.ParseDuration("1d")
-		if err != nil {
-			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err))
-			os.Exit(1)
-			return err
-		}
+	var err error
+	c.Interval, err = c.getConfigDuration(k, "interval", "24h")
+	if err != nil {
+		l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
+		return err
 	}
 	l.Info("Config: interval", slog.String("interval", c.Interval.String()))
 
 	// RetryInterval
-	if _, ok := data["retryInterval"]; ok {
-		c.RetryInterval, err = time.ParseDuration(data["retryInterval"].(string))
-		if err != nil {
-			l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
-			return err
-		}
-	} else {
-		c.RetryInterval, err = time.ParseDuration("1d")
-		if err != nil {
-			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err))
-			os.Exit(1)
-			return err
-		}
+	c.RetryInterval, err = c.getConfigDuration(k, "retryInterval", "1d")
+	if err != nil {
+		l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
+		return err
 	}
 	l.Info("Config: retryInterval", slog.String("retryInterval", c.RetryInterval.String()))
 
 	// Metrics prefix
-	if _, ok := data["metricsPrefix"]; ok {
-		c.MetricsPrefix = data["metricsPrefix"].(string)
-	} else {
-		c.MetricsPrefix = "backupremotefiles"
-	}
-	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.RetryInterval.String()))
+	c.MetricsPrefix = c.getConfigString(k, "metricsPrefix", "backupremotefiles")
+	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
 
 	c.Backups = make([]Backup, 0)
-	for id, v := range data["backups"].(map[string]any) {
-		var b Backup
-		fb := v.(map[string]any)
-		b.ID = id
-		b.URL = fb["url"].(string)
-		b.Username = fb["username"].(string)
-		b.Password = fb["password"].(string)
-		b.OutputFile = fb["outputFile"].(string)
-		b.RetrieveSuccess = true // initialize status in safe state
-		c.Backups = append(c.Backups, b)
-		l.Info("Config: backup url", slog.String("url", b.URL))
+	if k.Exists("backups") {
+		backups := k.Get("backups").(map[string]any)
+		for id, v := range backups {
+			var b Backup
+			fb := v.(map[string]any)
+			b.ID = id
+			b.URL = fb["url"].(string)
+			b.Username = fb["username"].(string)
+			b.Password = fb["password"].(string)
+			b.OutputFile = fb["outputFile"].(string)
+			b.RetrieveSuccess = true // initialize status in safe state
+			c.Backups = append(c.Backups, b)
+			l.Info("Config: backup url", slog.String("url", b.URL))
+		}
 	}
 	return nil
 }

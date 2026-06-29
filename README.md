@@ -47,7 +47,11 @@ Note: `logging.filename` can be set to one of `stdout`, `stderr` or a filename. 
 
 ## Environment variables
 
-- `LOG_LEVEL`: log level
+All environment variables are prefixed with `BRF_`.
+
+See config.yaml.sample for a list of environment variables that can be used to override configuration values. Example:
+
+- `BRF_LOGGING_LEVEL`: log level
 
 ## Build
 

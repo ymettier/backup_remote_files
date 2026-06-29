@@ -18,6 +18,8 @@ import (
 	"github.com/knadh/koanf/v2"
 )
 
+const defaultPort = 9289
+
 func printVersion(version string) string {
 	output := fmt.Sprintf("%-15s: %s\n", "Version", version)
 
@@ -59,38 +61,41 @@ type CLIFlags struct {
 
 func parseFlags(version string) CLIFlags {
 	fs := flag.NewFlagSet("backup_remote_files", flag.ContinueOnError)
-	
+
 	configFile := fs.String("c", "", "Configuration file (required)")
 	configFile2 := fs.String("config", "", "Configuration file (required)")
-	port := fs.Int("p", 9289, "Exporter port")
-	port2 := fs.Int("port", 9289, "Exporter port")
+	port := fs.Int("p", defaultPort, "Exporter port")
+	port2 := fs.Int("port", defaultPort, "Exporter port")
 	showVersion := fs.Bool("V", false, "Show version info")
 	showVersion2 := fs.Bool("version", false, "Show version info")
-	
-	fs.Parse(os.Args[1:])
-	
+
+	if err := fs.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Handle flags with priority for short form
 	config := *configFile
 	if config == "" {
 		config = *configFile2
 	}
-	
+
 	portVal := *port
-	if portVal == 9289 && *port2 != 9289 {
+	if portVal == defaultPort && *port2 != defaultPort {
 		portVal = *port2
 	}
-	
+
 	if *showVersion || *showVersion2 {
 		output := printVersion(version)
 		fmt.Printf("%s", output)
 		os.Exit(0)
 	}
-	
+
 	if config == "" {
 		fmt.Fprintf(os.Stderr, "Error: -c/--config is required\n")
 		os.Exit(1)
 	}
-	
+
 	return CLIFlags{
 		ConfigFile: config,
 		Port:       portVal,
@@ -164,7 +169,7 @@ func loggerConfig(logging map[string]any) logger.LogOptions {
 
 func (c *Config) readConfig(filename string) error {
 	l := logger.Get()
-	
+
 	// Initialize Koanf with YAML parser
 	k := koanf.New(".")
 	if err := k.Load(file.Provider(filename), yaml.Parser()); err != nil {

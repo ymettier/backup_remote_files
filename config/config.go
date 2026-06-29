@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"log/slog"
 
 	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 )
@@ -132,6 +134,52 @@ func New(version string) (Config, error) {
 	return cfg, nil
 }
 
+func (c *Config) getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
+	// Check env form (lowercase) first so env vars override YAML values.
+	// Env provider transforms BRF_RETRYINTERVAL -> retryinterval,
+	// while YAML keys use camelCase (retryInterval).
+	envKey := strings.ToLower(camelKey)
+	if k.Exists(envKey) {
+		return k.String(envKey)
+	}
+	// Check YAML form (camelCase for flat keys like "retryInterval")
+	if k.Exists(camelKey) {
+		return k.String(camelKey)
+	}
+	// For nested keys like "logging.level", also check with underscore form
+	// (in case the transformer created underscore version instead of dot)
+	underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
+	if k.Exists(underscoreKey) {
+		return k.String(underscoreKey)
+	}
+	return defaultValue
+}
+
+func (c *Config) getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
+	var durationStr string
+	// Check env form (lowercase) first so env vars override YAML values.
+	envKey := strings.ToLower(camelKey)
+	if k.Exists(envKey) {
+		durationStr = k.String(envKey)
+	} else if k.Exists(camelKey) {
+		durationStr = k.String(camelKey)
+	} else {
+		// For nested keys like "logging.level", also check with underscore form
+		underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
+		if k.Exists(underscoreKey) {
+			durationStr = k.String(underscoreKey)
+		} else {
+			durationStr = defaultDuration
+		}
+	}
+
+	duration, err := time.ParseDuration(durationStr)
+	if err != nil {
+		return 0, err
+	}
+	return duration, nil
+}
+
 func loggerConfig(logging map[string]any) logger.LogOptions {
 	logOpts := logger.LogOptions{
 		Level:      "INFO",
@@ -178,6 +226,23 @@ func (c *Config) readConfig(filename string) error {
 		return err
 	}
 
+	// Load environment variables with BRF_ prefix (overrides YAML values)
+	// For flat keys: BRF_RETRYINTERVAL -> retryInterval, BRF_INTERVAL -> interval
+	// For nested keys: BRF_LOGGING_LEVEL -> logging.level
+	if err := k.Load(env.Provider("BRF_", ".", func(s string) string {
+		// Remove BRF_ prefix
+		s = strings.TrimPrefix(s, "BRF_")
+		// Convert to lowercase
+		s = strings.ToLower(s)
+		// Replace underscores with dots for nested keys
+		s = strings.ReplaceAll(s, "_", ".")
+		return s
+	}), nil); err != nil {
+		l.Error("Failed to load environment variables", slog.Any("error", err))
+		os.Exit(1)
+		return err
+	}
+
 	// Logging configuration
 	if k.Exists("logging") {
 		logging := k.Get("logging").(map[string]any)
@@ -185,68 +250,26 @@ func (c *Config) readConfig(filename string) error {
 		logger.Reset(&logOpts)
 		l = logger.Get() // Update local logger reference
 	}
-	// Configuration file format
-	//
-	// backups:
-	//   - url: <some url>
-	//     username: <some username>
-	//     password: <some password>
-	//     outputFile: <output file>
-	//
-	// interval: "1h" // default "1d"
-	// retryInterval: "5m" // default "1h"
-	// metricsPrefix: "backupremotefiles"
-	// logging:
-	//   level: <log level>            // default "info"
-	//   filename: <log filename>      // default ""
-	//   maxSize: <max log size>       // default 5
-	//   maxBackups: <max log backups> // Default 10
-	//   maxAge: <max log age>         // Default 14
-	//   compress: <compress log>      // Default true
-	//   json: <log in JSON>           // Default false
-
 	// Interval
 	var err error
-	if k.Exists("interval") {
-		c.Interval, err = time.ParseDuration(k.String("interval"))
-		if err != nil {
-			l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
-			return err
-		}
-	} else {
-		c.Interval, err = time.ParseDuration("1d")
-		if err != nil {
-			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err))
-			os.Exit(1)
-			return err
-		}
+	c.Interval, err = c.getConfigDuration(k, "interval", "24h")
+	if err != nil {
+		l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
+		return err
 	}
 	l.Info("Config: interval", slog.String("interval", c.Interval.String()))
 
 	// RetryInterval
-	if k.Exists("retryInterval") {
-		c.RetryInterval, err = time.ParseDuration(k.String("retryInterval"))
-		if err != nil {
-			l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
-			return err
-		}
-	} else {
-		c.RetryInterval, err = time.ParseDuration("1d")
-		if err != nil {
-			l.Error("Failed to generate duration 'interval' from default value. THIS IS A BUG", slog.Any("error", err))
-			os.Exit(1)
-			return err
-		}
+	c.RetryInterval, err = c.getConfigDuration(k, "retryInterval", "1d")
+	if err != nil {
+		l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
+		return err
 	}
 	l.Info("Config: retryInterval", slog.String("retryInterval", c.RetryInterval.String()))
 
 	// Metrics prefix
-	if k.Exists("metricsPrefix") {
-		c.MetricsPrefix = k.String("metricsPrefix")
-	} else {
-		c.MetricsPrefix = "backupremotefiles"
-	}
-	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.RetryInterval.String()))
+	c.MetricsPrefix = c.getConfigString(k, "metricsPrefix", "backupremotefiles")
+	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
 
 	c.Backups = make([]Backup, 0)
 	if k.Exists("backups") {

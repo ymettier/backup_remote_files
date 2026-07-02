@@ -48,6 +48,8 @@ release:
   prerelease: auto
   footer: >-
 
+    Docker image:  ghcr.io/ymettier/backup_remote_files:{{ .Version }}
+
     ---
 
     Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

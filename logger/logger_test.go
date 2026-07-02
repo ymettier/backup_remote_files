@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,11 +67,26 @@ func TestGetOtherJsonLogFile(t *testing.T) {
 	defer jsonFile.Close()
 	byteValue, _ := io.ReadAll(jsonFile)
 
-	// Ensure that the content of the file is in json format
-	assert.True(t, json.Valid(byteValue))
+	// Find the test message line (second line, after the config log)
+	lines := strings.Split(string(byteValue), "\n")
+	var messageLine string
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var entry map[string]any
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if entry["msg"] == "Message" {
+			messageLine = line
+			break
+		}
+	}
+	assert.NotEmpty(t, messageLine, "should find the test message line")
 
 	var result map[string]any
-	err = json.Unmarshal(byteValue, &result)
+	err = json.Unmarshal([]byte(messageLine), &result)
 	assert.NoError(t, err)
 	assert.Equal(t, "WARN", result["level"])
 	assert.Equal(t, "Message", result["msg"])

@@ -34,6 +34,41 @@ type LogOptions struct {
 	Compress   bool
 }
 
+// getWriter returns an io.Writer and whether lumberjack rotation is being used.
+func getWriter(opts *LogOptions) (io.Writer, bool) {
+	filename := ""
+	if opts != nil && opts.Filename != "" {
+		filename = opts.Filename
+	}
+
+	if filename == "" {
+		return os.Stderr, false
+	}
+
+	switch filename {
+	case "stdout":
+		return os.Stdout, false
+	case "stderr":
+		return os.Stderr, false
+	}
+
+	l := &lumberjack.Logger{
+		Filename: filename,
+	}
+	if opts != nil {
+		l.MaxSize = opts.MaxSize
+		l.MaxBackups = opts.MaxBackups
+		l.MaxAge = opts.MaxAge
+		l.Compress = opts.Compress
+	} else {
+		l.MaxSize = 5
+		l.MaxBackups = 10
+		l.MaxAge = 14
+		l.Compress = true
+	}
+	return l, true
+}
+
 // newLogger creates a new logger based on opts or environment variables if opts is nil.
 func newLogger(opts *LogOptions) *Logger {
 	// Define log level
@@ -58,43 +93,7 @@ func newLogger(opts *LogOptions) *Logger {
 		Level: level,
 	}
 
-	// Define log writer
-	var w io.Writer = os.Stderr
-	var filename string
-	if opts != nil && opts.Filename != "" {
-		filename = opts.Filename
-	}
-
-	if filename != "" {
-		switch filename {
-		case "stdout":
-			w = os.Stdout
-		case "stderr":
-			w = os.Stderr
-		default:
-			l := &lumberjack.Logger{
-				Filename: filename,
-			}
-			if opts != nil {
-				l.MaxSize = opts.MaxSize
-				l.MaxBackups = opts.MaxBackups
-				l.MaxAge = opts.MaxAge
-				l.Compress = opts.Compress
-			} else {
-				// Defaults if no opts provided
-				l.MaxSize = 5
-				l.MaxBackups = 10
-				l.MaxAge = 14
-				l.Compress = true
-			}
-			w = l
-		}
-	} else if opts != nil {
-		// If filename is empty in opts, it means we might want to default to stderr
-		// or maybe the user just didn't specify it in the config file.
-		// If we are here, filename is empty.
-		w = os.Stderr
-	}
+	w, usingLumberjack := getWriter(opts)
 
 	// Create new logger
 	var handler slog.Handler
@@ -103,7 +102,26 @@ func newLogger(opts *LogOptions) *Logger {
 	} else {
 		handler = slog.NewTextHandler(w, handlerOpts)
 	}
-	return &Logger{slog.New(handler)}
+	l := &Logger{slog.New(handler)}
+
+	if opts != nil {
+		attrs := []any{
+			slog.String("level", opts.Level),
+			slog.String("filename", opts.Filename),
+			slog.Bool("json", opts.JSON),
+		}
+		if usingLumberjack {
+			attrs = append(attrs,
+				slog.Int("maxSize", opts.MaxSize),
+				slog.Int("maxBackups", opts.MaxBackups),
+				slog.Int("maxAge", opts.MaxAge),
+				slog.Bool("compress", opts.Compress),
+			)
+		}
+		l.Info("Logger configuration", attrs...)
+	}
+
+	return l
 }
 
 // Get initializes a Logger instance if it has not been initialized

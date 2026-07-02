@@ -172,7 +172,7 @@ func (c *Config) getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration str
 	return duration, nil
 }
 
-func loggerConfig(logging map[string]any) logger.LogOptions {
+func loggerConfig(k *koanf.Koanf) logger.LogOptions {
 	logOpts := logger.LogOptions{
 		Level:      "INFO",
 		Filename:   "",
@@ -183,26 +183,26 @@ func loggerConfig(logging map[string]any) logger.LogOptions {
 		JSON:       false,
 	}
 
-	if level, ok := logging["level"].(string); ok {
-		logOpts.Level = level
+	if v := k.String("logging.level"); v != "" {
+		logOpts.Level = v
 	}
-	if filename, ok := logging["filename"].(string); ok {
-		logOpts.Filename = filename
+	if v := k.String("logging.filename"); v != "" {
+		logOpts.Filename = v
 	}
-	if maxSize, ok := logging["maxSize"].(int); ok {
-		logOpts.MaxSize = maxSize
+	if k.Exists("logging.maxSize") {
+		logOpts.MaxSize = k.Int("logging.maxSize")
 	}
-	if maxBackups, ok := logging["maxBackups"].(int); ok {
-		logOpts.MaxBackups = maxBackups
+	if k.Exists("logging.maxBackups") {
+		logOpts.MaxBackups = k.Int("logging.maxBackups")
 	}
-	if maxAge, ok := logging["maxAge"].(int); ok {
-		logOpts.MaxAge = maxAge
+	if k.Exists("logging.maxAge") {
+		logOpts.MaxAge = k.Int("logging.maxAge")
 	}
-	if compress, ok := logging["compress"].(bool); ok {
-		logOpts.Compress = compress
+	if k.Exists("logging.compress") {
+		logOpts.Compress = k.Bool("logging.compress")
 	}
-	if isJSON, ok := logging["json"].(bool); ok {
-		logOpts.JSON = isJSON
+	if k.Exists("logging.json") {
+		logOpts.JSON = k.Bool("logging.json")
 	}
 	return logOpts
 }
@@ -237,10 +237,9 @@ func (c *Config) readConfig(filename string) error {
 
 	// Logging configuration
 	if k.Exists("logging") {
-		logging := k.Get("logging").(map[string]any)
-		logOpts := loggerConfig(logging)
+		logOpts := loggerConfig(k)
 		logger.Reset(&logOpts)
-		l = logger.Get() // Update local logger reference
+		l = logger.Get()
 	}
 	// Interval
 	var err error

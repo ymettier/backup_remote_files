@@ -41,9 +41,11 @@ changelog:
     exclude:
       - "^docs:"
       - "^test:"
+      - "-rc*"
 
 release:
   draft: true
+  prerelease: auto
   footer: >-
 
     ---

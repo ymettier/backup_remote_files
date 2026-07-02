@@ -209,13 +209,13 @@ func retrieveUrls(cfg config.Config, metric *metrics, retrieveAll bool) (allRetr
 }
 
 func main() {
-	l := logger.Get()
-
 	// Read configuration
 	cfg, err := config.New(Version)
 	if err != nil {
 		os.Exit(1)
 	}
+
+	l := logger.Get()
 
 	// Create a non-global registry.
 	reg := prometheus.NewRegistry()

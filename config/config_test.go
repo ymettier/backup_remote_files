@@ -45,7 +45,7 @@ metricsPrefix: "default_prefix"
 	}()
 
 	oldArgs := os.Args
-	os.Args = []string{"test", "-c", "test_env_config.yaml"} //nolint:goconst
+	os.Args = []string{"test", "-c", "test_env_config.yaml"}
 	defer func() { os.Args = oldArgs }()
 
 	cfg, err := New("test")

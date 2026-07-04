@@ -5,7 +5,6 @@ package main
 
 import (
 	"backup_remote_files/config"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,11 +36,6 @@ func useTempDir(t *testing.T) {
 func createConfigFile(key, url string) (configurationFilename, outputFilename string, err error) {
 	configurationFilename = "config." + key + ".yaml"
 	outputFilename = key + ".out"
-
-	// Remove the configuration file if it already exists
-	if _, err := os.Stat(configurationFilename); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(configurationFilename)
-	}
 
 	f, err := os.Create(configurationFilename)
 	if err != nil {

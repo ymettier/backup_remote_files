@@ -149,6 +149,74 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 	assert.Equal(t, string(byteValue), wantedMsg+"\n")
 }
 
+func TestRetrieveUrlsRetry(t *testing.T) {
+	wantedMsg := "Iune0Shaex"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, wantedMsg)
+	}))
+	defer ts.Close()
+
+	// Create a config file with two backups
+	configContent := fmt.Sprintf(""+
+		"backups:\n"+
+		"  a:\n"+
+		"    url: '%s'\n"+
+		"    username: ''\n"+
+		"    password: ''\n"+
+		"    outputFile: 'retry_a.out'\n"+
+		"  b:\n"+
+		"    url: '%s'\n"+
+		"    username: ''\n"+
+		"    password: ''\n"+
+		"    outputFile: 'retry_b.out'\n"+
+		"interval: '1m'\n"+
+		"retryInterval: '10s'\n"+
+		"metricsPrefix: 'backuprf'\n",
+		ts.URL, ts.URL)
+
+	configFilename := "retry_config.yaml"
+	err := os.WriteFile(configFilename, []byte(configContent), 0600)
+	assert.Nil(t, err)
+	defer os.Remove(configFilename)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configFilename}
+
+	cfg, err := config.New("0.0.0")
+	assert.Nil(t, err)
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+
+	// Create tracker with "a" successful and "b" failed
+	status := newBackupStatus(cfg.Backups)
+	status.success["a"] = true
+	status.success["b"] = false
+
+	// Call retrieveAll=false — should only retry "b"
+	r := retrieveUrls(cfg, m, status, false)
+
+	defer os.Remove("retry_a.out")
+	defer os.Remove("retry_b.out")
+
+	assert.True(t, r)
+
+	// "a" was already successful, should NOT have been retried
+	_, err = os.Stat("retry_a.out")
+	assert.True(t, os.IsNotExist(err), "successful backup should not be retried")
+
+	// "b" was failed, should have been retried and succeeded
+	if !assert.FileExists(t, "retry_b.out") {
+		return
+	}
+	outputFile, err := os.Open("retry_b.out")
+	assert.Nil(t, err)
+	defer outputFile.Close()
+	byteValue, _ := io.ReadAll(outputFile)
+	assert.Equal(t, string(byteValue), wantedMsg+"\n")
+}
+
 func TestRetrieveUrlsBroken(t *testing.T) {
 	wantedMsg := "aiK8eephiT"
 	oldMsg := "old"

@@ -102,10 +102,6 @@ func initializeCounters(cfg config.Config, metric *metrics) {
 		"goversion": runtime.Version(),
 		"version":   Version,
 	}).Set(float64(1))
-
-	for _, backup := range cfg.Backups {
-		metric.BackupFailed.With(prometheus.Labels{"id": backup.ID}).Add(0)
-	}
 }
 
 type backupStatus struct {

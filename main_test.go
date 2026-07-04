@@ -15,7 +15,9 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func createConfigFile(key, url string) (configurationFilename, outputFilename string, err error) {
@@ -245,4 +247,161 @@ func TestBackupFile_InvalidURL(t *testing.T) {
 
 	var target *httpError
 	assert.True(t, errors.As(err, &target))
+}
+
+func findMetric(families []*dto.MetricFamily, name string) *dto.MetricFamily {
+	for _, f := range families {
+		if f.GetName() == name {
+			return f
+		}
+	}
+	return nil
+}
+
+func findMetricWithID(family *dto.MetricFamily, id string) *dto.Metric {
+	for _, m := range family.GetMetric() {
+		for _, l := range m.GetLabel() {
+			if l.GetName() == "id" && l.GetValue() == id { //nolint:goconst
+				return m
+			}
+		}
+	}
+	return nil
+}
+
+func TestMetricsValues(t *testing.T) {
+	testutil.UseTempDir(t)
+	wantedMsg := "metrics_test"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, wantedMsg)
+	}))
+	defer ts.Close()
+
+	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
+	assert.Nil(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+
+	cfg, err := config.New("0.0.0")
+	assert.Nil(t, err)
+
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+	status := newBackupStatus(cfg.Backups)
+
+	r := retrieveUrls(cfg, m, status, true)
+	assert.True(t, r)
+	defer os.Remove(outputFilename)
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+
+	statusFamily := findMetric(families, "backuprf_backup_status")
+	require.NotNil(t, statusFamily)
+	metric := findMetricWithID(statusFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(1), metric.GetGauge().GetValue())
+
+	sizeFamily := findMetric(families, "backuprf_backup_size")
+	require.NotNil(t, sizeFamily)
+	metric = findMetricWithID(sizeFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Greater(t, metric.GetGauge().GetValue(), float64(0))
+
+	totalFamily := findMetric(families, "backuprf_backup_nb")
+	require.NotNil(t, totalFamily)
+	assert.Equal(t, float64(1), totalFamily.GetMetric()[0].GetCounter().GetValue())
+}
+
+func TestMetricsValues_BrokenServer(t *testing.T) {
+	testutil.UseTempDir(t)
+	wantedMsg := "metrics_broken"
+	oldMsg := "old"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, err := w.Write([]byte("Internal Server Error"))
+		assert.Nil(t, err)
+	}))
+	defer ts.Close()
+
+	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
+	assert.Nil(t, err)
+
+	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
+	assert.Nil(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+
+	cfg, err := config.New("0.0.0")
+	assert.Nil(t, err)
+
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+	status := newBackupStatus(cfg.Backups)
+
+	_ = retrieveUrls(cfg, m, status, true)
+	defer os.Remove(outputFilename)
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+
+	statusFamily := findMetric(families, "backuprf_backup_status")
+	require.NotNil(t, statusFamily)
+	metric := findMetricWithID(statusFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(0), metric.GetGauge().GetValue())
+
+	failedFamily := findMetric(families, "backuprf_backup_failed")
+	require.NotNil(t, failedFamily)
+	metric = findMetricWithID(failedFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(1), metric.GetCounter().GetValue())
+
+	totalFamily := findMetric(families, "backuprf_backup_nb")
+	require.NotNil(t, totalFamily)
+	assert.Equal(t, float64(1), totalFamily.GetMetric()[0].GetCounter().GetValue())
+}
+
+func TestMetricsValues_FileSizeError(t *testing.T) {
+	testutil.UseTempDir(t)
+	wantedMsg := "metrics_fserr"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, wantedMsg)
+	}))
+	defer ts.Close()
+
+	configurationFilename, _, err := createConfigFile(wantedMsg, ts.URL)
+	assert.Nil(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+
+	cfg, err := config.New("0.0.0")
+	assert.Nil(t, err)
+
+	// Override the output path to a directory so fileSize fails
+	cfg.Backups[0].OutputFile = "."
+
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+	status := newBackupStatus(cfg.Backups)
+
+	_ = retrieveUrls(cfg, m, status, true)
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+
+	statusFamily := findMetric(families, "backuprf_backup_status")
+	require.NotNil(t, statusFamily)
+	metric := findMetricWithID(statusFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(0), metric.GetGauge().GetValue())
 }

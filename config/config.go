@@ -213,8 +213,7 @@ func (c *Config) readConfig(filename string) error {
 	// Initialize Koanf with YAML parser
 	k := koanf.New(".")
 	if err := k.Load(file.Provider(filename), yaml.Parser()); err != nil {
-		l.Error("Failed to read configuration file", slog.String("file", filename), slog.Any("error", err))
-		os.Exit(1)
+		return fmt.Errorf("failed to read configuration file %s: %w", filename, err)
 	}
 
 	// Load environment variables with BRF_ prefix (overrides YAML values)
@@ -229,8 +228,7 @@ func (c *Config) readConfig(filename string) error {
 		s = strings.ReplaceAll(s, "_", ".")
 		return s
 	}), nil); err != nil {
-		l.Error("Failed to load environment variables", slog.Any("error", err))
-		os.Exit(1)
+		return fmt.Errorf("failed to load environment variables: %w", err)
 	}
 
 	// Logging configuration

@@ -4,6 +4,7 @@ import (
 	"backup_remote_files/config"
 	"backup_remote_files/logger"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -212,6 +213,7 @@ func main() {
 	// Read configuration
 	cfg, err := config.New(Version)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 

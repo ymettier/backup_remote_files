@@ -123,4 +123,4 @@ This is a backup remote files application written in Go. It retrieves files from
 - Never commit. Let the user commit their own changes. But suggest a commit message by showing the full `git commit` command.
 - Configuration errors cause immediate exit with os.Exit(1)
 - All file operations use .part suffix during transfer, renamed on success
-- function `backupFile()` backups a single file from the given URL to the destination path. When it returns with a failure, we must know if the error comes from the HTTP client or the local file system.
+- function `backupFile()` backs up a single file from the given URL to the destination path. It returns `nil` on success, `*httpError` on HTTP/network failures, and `*fsError` on local filesystem failures. Use `errors.As` in the caller to distinguish the category.

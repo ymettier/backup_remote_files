@@ -4,6 +4,7 @@ import (
 	"backup_remote_files/config"
 	"backup_remote_files/logger"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -116,31 +117,39 @@ func newBackupStatus(backups []config.Backup) *backupStatus {
 	return &backupStatus{success: s}
 }
 
-func backupFile(id, url, username, password, outputFile string) (retrieveSuccess bool, err error) {
+type httpError struct{ error }
+
+func (e *httpError) Unwrap() error { return e.error }
+
+type fsError struct{ error }
+
+func (e *fsError) Unwrap() error { return e.error }
+
+func backupFile(id, url, username, password, outputFile string) error {
 	l := logger.Get()
 	req, err := http.NewRequestWithContext(context.Background(), "GET", url, http.NoBody)
 	if err != nil {
 		l.Error("Failed to create new request", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
-		return false, err
+		return &httpError{err}
 	}
 	req.SetBasicAuth(username, password)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		l.Error("Failed to read data", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
-		return false, err
+		return &httpError{err}
 	}
 	defer resp.Body.Close()
 
 	outputFileFD, err := os.Create(outputFile + ".part")
 	if err != nil {
 		l.Error("Failed to open file for writing", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
-		return true, err
+		return &fsError{err}
 	}
 	defer outputFileFD.Close()
 	if _, err = io.Copy(outputFileFD, resp.Body); err != nil {
 		l.Error("Failed to write contents to file", slog.String("id", id), slog.String("filename", outputFile))
-		return true, err
+		return &fsError{err}
 	}
 	outputFileFD.Close()
 
@@ -148,7 +157,7 @@ func backupFile(id, url, username, password, outputFile string) (retrieveSuccess
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
 		os.Remove(outputFile + ".part")
-		return false, nil
+		return &httpError{errors.New("HTTP status >= 300")}
 	} else {
 		err := os.Rename(outputFile+".part", outputFile)
 		if err != nil {
@@ -157,11 +166,11 @@ func backupFile(id, url, username, password, outputFile string) (retrieveSuccess
 				slog.String("oldFilename", outputFile+".part"),
 				slog.String("newFilename", outputFile),
 			)
-			return true, err
+			return &fsError{err}
 		}
 		l.Info("Successfully retrieved file", slog.String("id", id), slog.String("filename", outputFile))
 	}
-	return true, nil
+	return nil
 }
 
 func fileSize(filename string) (int64, error) {
@@ -196,10 +205,11 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 			l.Info("Retrying...", slog.String("id", backup.ID))
 		}
 		status.success[backup.ID] = true
-		if RetrieveSuccess, err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
+		if err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
 			recordBackupFailed(metric, backup.ID)
-			status.success[backup.ID] = RetrieveSuccess
-			if !RetrieveSuccess {
+			isHTTP := errors.As(err, &httpError{})
+			status.success[backup.ID] = !isHTTP
+			if isHTTP {
 				allRetrievalsSuccess = false
 			}
 			continue

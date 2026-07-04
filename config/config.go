@@ -215,7 +215,6 @@ func (c *Config) readConfig(filename string) error {
 	if err := k.Load(file.Provider(filename), yaml.Parser()); err != nil {
 		l.Error("Failed to read configuration file", slog.String("file", filename), slog.Any("error", err))
 		os.Exit(1)
-		return err
 	}
 
 	// Load environment variables with BRF_ prefix (overrides YAML values)
@@ -232,7 +231,6 @@ func (c *Config) readConfig(filename string) error {
 	}), nil); err != nil {
 		l.Error("Failed to load environment variables", slog.Any("error", err))
 		os.Exit(1)
-		return err
 	}
 
 	// Logging configuration

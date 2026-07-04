@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/knadh/koanf/v2"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -54,4 +55,52 @@ metricsPrefix: "default_prefix"
 	assert.Equal(t, "2h0m0s", cfg.Interval.String())
 	assert.Equal(t, "30m0s", cfg.RetryInterval.String())
 	assert.Equal(t, "custom_prefix", cfg.MetricsPrefix)
+}
+
+func TestLoggerConfigDefaults(t *testing.T) {
+	k := koanf.New(".")
+	opts := loggerConfig(k)
+
+	assert.Equal(t, "INFO", opts.Level)
+	assert.Equal(t, "", opts.Filename)
+	assert.Equal(t, 5, opts.MaxSize)
+	assert.Equal(t, 10, opts.MaxBackups)
+	assert.Equal(t, 14, opts.MaxAge)
+	assert.True(t, opts.Compress)
+	assert.False(t, opts.JSON)
+}
+
+func TestLoggerConfigOverrides(t *testing.T) {
+	k := koanf.New(".")
+	assert.NoError(t, k.Set("logging.level", "DEBUG"))
+	assert.NoError(t, k.Set("logging.filename", "/var/log/test.log"))
+	assert.NoError(t, k.Set("logging.maxSize", 50))
+	assert.NoError(t, k.Set("logging.maxBackups", 20))
+	assert.NoError(t, k.Set("logging.maxAge", 30))
+	assert.NoError(t, k.Set("logging.compress", false))
+	assert.NoError(t, k.Set("logging.json", true))
+	opts := loggerConfig(k)
+
+	assert.Equal(t, "DEBUG", opts.Level)
+	assert.Equal(t, "/var/log/test.log", opts.Filename)
+	assert.Equal(t, 50, opts.MaxSize)
+	assert.Equal(t, 20, opts.MaxBackups)
+	assert.Equal(t, 30, opts.MaxAge)
+	assert.False(t, opts.Compress)
+	assert.True(t, opts.JSON)
+}
+
+func TestLoggerConfigPartialOverrides(t *testing.T) {
+	k := koanf.New(".")
+	assert.NoError(t, k.Set("logging.level", "ERROR"))
+	assert.NoError(t, k.Set("logging.filename", "stdout"))
+	opts := loggerConfig(k)
+
+	assert.Equal(t, "ERROR", opts.Level)
+	assert.Equal(t, "stdout", opts.Filename)
+	assert.Equal(t, 5, opts.MaxSize)
+	assert.Equal(t, 10, opts.MaxBackups)
+	assert.Equal(t, 14, opts.MaxAge)
+	assert.True(t, opts.Compress)
+	assert.False(t, opts.JSON)
 }

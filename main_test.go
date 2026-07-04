@@ -6,6 +6,7 @@ package main
 import (
 	"backup_remote_files/config"
 	"backup_remote_files/testutil"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -209,11 +210,9 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 
 	status := newBackupStatus(cfg.Backups)
 	r := retrieveUrls(cfg, m, status, true)
-	if !assert.FileExists(t, outputFilename) {
-		return
-	}
+	assert.FileExists(t, outputFilename)
 
-	assert.True(t, r)
+	assert.False(t, r)
 
 	outputFile, err := os.Open(outputFilename)
 	if !assert.NoError(t, err) {
@@ -223,4 +222,27 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 
 	byteValue, _ := io.ReadAll(outputFile)
 	assert.Equal(t, string(byteValue), oldMsg)
+}
+
+func TestFileSize_NotFound(t *testing.T) {
+	_, err := fileSize("nonexistent_file")
+	assert.Error(t, err)
+}
+
+func TestInitializeCounters(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, "test")
+	initializeCounters(m)
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, families)
+}
+
+func TestBackupFile_InvalidURL(t *testing.T) {
+	err := backupFile("test", "://invalid", "", "", "test.out")
+	assert.Error(t, err)
+
+	var target *httpError
+	assert.True(t, errors.As(err, &target))
 }

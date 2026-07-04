@@ -207,7 +207,8 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 		status.success[backup.ID] = true
 		if err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
 			recordBackupFailed(metric, backup.ID)
-			isHTTP := errors.As(err, &httpError{})
+			var target *httpError
+			isHTTP := errors.As(err, &target)
 			status.success[backup.ID] = !isHTTP
 			if isHTTP {
 				allRetrievalsSuccess = false

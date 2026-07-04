@@ -63,7 +63,7 @@ func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename} //nolint:goconst
 
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
@@ -94,7 +94,7 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename} //nolint:goconst
 
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
@@ -151,7 +151,7 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"./backup_remote_files", "-c", configFilename}
+	os.Args = []string{"./backup_remote_files", "-c", configFilename} //nolint:goconst
 
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
@@ -200,7 +200,7 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
 
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename} //nolint:goconst
 
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)

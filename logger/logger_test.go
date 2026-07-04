@@ -4,6 +4,7 @@
 package logger
 
 import (
+	"backup_remote_files/testutil"
 	"context"
 	"encoding/json"
 	"io"
@@ -14,25 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func useTempDir(t *testing.T) {
-	t.Helper()
-	dir := t.TempDir()
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(oldDir); err != nil {
-			t.Logf("failed to restore working directory: %v", err)
-		}
-	})
-}
-
 func TestGetOtherTxtLogFile(t *testing.T) {
-	useTempDir(t)
+	testutil.UseTempDir(t)
 	filename := "txt_test.log"
 
 	l := newLogger(&LogOptions{Filename: filename})
@@ -54,7 +38,7 @@ func TestGetOtherTxtLogFile(t *testing.T) {
 }
 
 func TestGetOtherJsonLogFile(t *testing.T) {
-	useTempDir(t)
+	testutil.UseTempDir(t)
 	filename := "json_test.log"
 
 	l := newLogger(&LogOptions{Filename: filename, JSON: true})

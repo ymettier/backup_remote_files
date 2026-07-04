@@ -5,6 +5,7 @@ package main
 
 import (
 	"backup_remote_files/config"
+	"backup_remote_files/testutil"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,23 +16,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 )
-
-func useTempDir(t *testing.T) {
-	t.Helper()
-	dir := t.TempDir()
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(oldDir); err != nil {
-			t.Logf("failed to restore working directory: %v", err)
-		}
-	})
-}
 
 func createConfigFile(key, url string) (configurationFilename, outputFilename string, err error) {
 	configurationFilename = "config." + key + ".yaml"
@@ -62,7 +46,7 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 }
 
 func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
-	useTempDir(t)
+	testutil.UseTempDir(t)
 	wantedMsg := "Iune0Shaex"
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -96,7 +80,7 @@ func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
 }
 
 func TestRetrieveUrlsSimple(t *testing.T) {
-	useTempDir(t)
+	testutil.UseTempDir(t)
 	wantedMsg := "voh0ahch3E"
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -136,7 +120,7 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 }
 
 func TestRetrieveUrlsRetry(t *testing.T) {
-	useTempDir(t)
+	testutil.UseTempDir(t)
 	wantedMsg := "Iune0Shaex"
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -196,7 +180,7 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 }
 
 func TestRetrieveUrlsBroken(t *testing.T) {
-	useTempDir(t)
+	testutil.UseTempDir(t)
 	wantedMsg := "aiK8eephiT"
 	oldMsg := "old"
 

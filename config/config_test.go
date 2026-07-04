@@ -4,6 +4,7 @@
 package config
 
 import (
+	"backup_remote_files/testutil"
 	"os"
 	"strings"
 	"testing"
@@ -18,25 +19,8 @@ func TestVersion(t *testing.T) {
 	assert.Equal(t, "Version        : "+wantedVersion, s[0], "Printing version")
 }
 
-func useTempDir(t *testing.T) {
-	t.Helper()
-	dir := t.TempDir()
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := os.Chdir(oldDir); err != nil {
-			t.Logf("failed to restore working directory: %v", err)
-		}
-	})
-}
-
 func TestEnvVariableOverrides(t *testing.T) {
-	useTempDir(t)
+	testutil.UseTempDir(t)
 	configContent := `
 backups:
   test:

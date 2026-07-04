@@ -264,16 +264,16 @@ func (c *Config) readConfig(filename string) error {
 
 	c.Backups = make([]Backup, 0)
 	if k.Exists("backups") {
-		backups := k.Get("backups").(map[string]any)
-		for id, v := range backups {
-			var b Backup
-			fb := v.(map[string]any)
-			b.ID = id
-			b.URL = fb["url"].(string)
-			b.Username = fb["username"].(string)
-			b.Password = fb["password"].(string)
-			b.OutputFile = fb["outputFile"].(string)
-			b.RetrieveSuccess = true // initialize status in safe state
+		for _, id := range k.MapKeys("backups") {
+			prefix := "backups." + id + "."
+			b := Backup{
+				ID:              id,
+				URL:             k.String(prefix + "url"),
+				Username:        k.String(prefix + "username"),
+				Password:        k.String(prefix + "password"),
+				OutputFile:      k.String(prefix + "outputFile"),
+				RetrieveSuccess: true,
+			}
 			c.Backups = append(c.Backups, b)
 			l.Info("Config: backup url", slog.String("url", b.URL))
 		}

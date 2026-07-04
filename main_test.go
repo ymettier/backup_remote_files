@@ -17,6 +17,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func useTempDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldDir); err != nil {
+			t.Logf("failed to restore working directory: %v", err)
+		}
+	})
+}
+
 func createConfigFile(key, url string) (configurationFilename, outputFilename string, err error) {
 	configurationFilename = "config." + key + ".yaml"
 	outputFilename = key + ".out"
@@ -51,91 +68,66 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 }
 
 func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
+	useTempDir(t)
 	wantedMsg := "Iune0Shaex"
 
-	// Create a web server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, wantedMsg)
 	}))
 	defer ts.Close()
 
-	// Generate the configuration file
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
-	defer os.Remove(configurationFilename)
 
-	// Remove the output file if it already exists
-	if _, err := os.Stat(outputFilename); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(outputFilename)
-	}
-	// Create a directory with the same name as the output file to generate an error
 	err = os.Mkdir(outputFilename, 0750)
 	assert.Nil(t, err)
-	defer os.RemoveAll(outputFilename)
 
-	// Change args to be able to run like main()
 	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }() // os.Args is a "global variable", so keep the state from before the test, and restore it after.
+	defer func() { os.Args = oldArgs }()
 
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename} //nolint:goconst // args is better explicit here
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
 
-	// from main.go
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Now start the tests
-	// Test retrieveUrls
 	status := newBackupStatus(cfg.Backups)
 	r := retrieveUrls(cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename+".part") {
 		return
 	}
-	defer os.Remove(outputFilename + ".part")
 
 	assert.True(t, r)
 }
 
 func TestRetrieveUrlsSimple(t *testing.T) {
+	useTempDir(t)
 	wantedMsg := "voh0ahch3E"
 
-	// Create a web server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, wantedMsg)
 	}))
 	defer ts.Close()
 
-	// Generate the configuration file
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
-	defer os.Remove(configurationFilename)
 
-	// Remove the output file if it already exists
-	if _, err := os.Stat(outputFilename); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(outputFilename)
-	}
-
-	// Change args to be able to run like main()
 	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }() // os.Args is a "global variable", so keep the state from before the test, and restore it after.
+	defer func() { os.Args = oldArgs }()
 
 	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
 
-	// from main.go
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Now start the tests
-	// Test retrieveUrls
 	status := newBackupStatus(cfg.Backups)
 	r := retrieveUrls(cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename) {
 		return
 	}
-	defer os.Remove(outputFilename)
 
 	assert.True(t, r)
 
@@ -150,6 +142,7 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 }
 
 func TestRetrieveUrlsRetry(t *testing.T) {
+	useTempDir(t)
 	wantedMsg := "Iune0Shaex"
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -157,7 +150,6 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Create a config file with two backups
 	configContent := fmt.Sprintf(""+
 		"backups:\n"+
 		"  a:\n"+
@@ -178,7 +170,6 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 	configFilename := "retry_config.yaml"
 	err := os.WriteFile(configFilename, []byte(configContent), 0600)
 	assert.Nil(t, err)
-	defer os.Remove(configFilename)
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
@@ -189,24 +180,17 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Create tracker with "a" successful and "b" failed
 	status := newBackupStatus(cfg.Backups)
 	status.success["a"] = true
 	status.success["b"] = false
 
-	// Call retrieveAll=false — should only retry "b"
 	r := retrieveUrls(cfg, m, status, false)
-
-	defer os.Remove("retry_a.out")
-	defer os.Remove("retry_b.out")
 
 	assert.True(t, r)
 
-	// "a" was already successful, should NOT have been retried
 	_, err = os.Stat("retry_a.out")
 	assert.True(t, os.IsNotExist(err), "successful backup should not be retried")
 
-	// "b" was failed, should have been retried and succeeded
 	if !assert.FileExists(t, "retry_b.out") {
 		return
 	}
@@ -218,10 +202,10 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 }
 
 func TestRetrieveUrlsBroken(t *testing.T) {
+	useTempDir(t)
 	wantedMsg := "aiK8eephiT"
 	oldMsg := "old"
 
-	// Create a web server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := w.Write([]byte("Internal Server Error"))
@@ -229,35 +213,27 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Generate the configuration file
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
-	defer os.Remove(configurationFilename)
 
-	// Create a file with "old" contents
 	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
 	assert.Nil(t, err)
 
-	// Change args to be able to run like main()
 	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }() // os.Args is a "global variable", so keep the state from before the test, and restore it after.
+	defer func() { os.Args = oldArgs }()
 
 	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
 
-	// from main.go
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Now start the tests
-	// Test retrieveUrls
 	status := newBackupStatus(cfg.Backups)
 	r := retrieveUrls(cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename) {
 		return
 	}
-	defer os.Remove(outputFilename)
 
 	assert.True(t, r)
 

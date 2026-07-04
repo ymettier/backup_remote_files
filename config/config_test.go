@@ -18,8 +18,25 @@ func TestVersion(t *testing.T) {
 	assert.Equal(t, "Version        : "+wantedVersion, s[0], "Printing version")
 }
 
+func useTempDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldDir); err != nil {
+			t.Logf("failed to restore working directory: %v", err)
+		}
+	})
+}
+
 func TestEnvVariableOverrides(t *testing.T) {
-	// Create a test config file
+	useTempDir(t)
 	configContent := `
 backups:
   test:
@@ -33,9 +50,7 @@ metricsPrefix: "default_prefix"
 `
 	err := os.WriteFile("test_env_config.yaml", []byte(configContent), 0600)
 	assert.Nil(t, err)
-	defer os.Remove("test_env_config.yaml")
 
-	// Set environment variables using camelCase naming (no underscores)
 	os.Setenv("BRF_INTERVAL", "2h")
 	os.Setenv("BRF_RETRYINTERVAL", "30m")
 	os.Setenv("BRF_METRICSPREFIX", "custom_prefix")
@@ -45,7 +60,6 @@ metricsPrefix: "default_prefix"
 		os.Unsetenv("BRF_METRICSPREFIX")
 	}()
 
-	// Mock os.Args for the test
 	oldArgs := os.Args
 	os.Args = []string{"test", "-c", "test_env_config.yaml"}
 	defer func() { os.Args = oldArgs }()
@@ -53,7 +67,6 @@ metricsPrefix: "default_prefix"
 	cfg, err := New("test")
 	assert.Nil(t, err)
 
-	// Verify environment variables overrode the config file
 	assert.Equal(t, "2h0m0s", cfg.Interval.String())
 	assert.Equal(t, "30m0s", cfg.RetryInterval.String())
 	assert.Equal(t, "custom_prefix", cfg.MetricsPrefix)

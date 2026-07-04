@@ -261,13 +261,13 @@ func (c *Config) readConfig(filename string) error {
 	if k.Exists("backups") {
 		for _, id := range k.MapKeys("backups") {
 			prefix := "backups." + id + "."
-		b := Backup{
-			ID:         id,
-			URL:        k.String(prefix + "url"),
-			Username:   k.String(prefix + "username"),
-			Password:   k.String(prefix + "password"),
-			OutputFile: k.String(prefix + "outputFile"),
-		}
+			b := Backup{
+				ID:         id,
+				URL:        k.String(prefix + "url"),
+				Username:   k.String(prefix + "username"),
+				Password:   k.String(prefix + "password"),
+				OutputFile: k.String(prefix + "outputFile"),
+			}
 			c.Backups = append(c.Backups, b)
 			l.Info("Config: backup url", slog.String("url", b.URL))
 		}

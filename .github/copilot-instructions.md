@@ -9,7 +9,7 @@ This is a backup remote files application written in Go. It retrieves files from
 - **Metrics**: Prometheus client_golang
 - **Logging**: Structured logging with slog and lumberjack
 - **Testing**: Go testing + testify for assertions
-- **CLI**: Standard library flag package
+- **CLI**: spf13/pflag
 - **Parsing configuration file**: YAML via Koanf
 
 ## Project Structure
@@ -108,17 +108,19 @@ This is a backup remote files application written in Go. It retrieves files from
 - `github.com/prometheus/client_golang` - Metrics
 - `gopkg.in/natefinch/lumberjack.v2` - Log rotation
 - `gopkg.in/yaml.v3` - YAML support
+- `github.com/spf13/pflag` - CLI flag parsing
 - `github.com/stretchr/testify` - Testing utilities
 
 ## Build & Deploy
 - Build: `go build`
 - Test: `go test ./...`
 - Docker: `docker build -t backup_remote_files .`
-- Lint: `golangci-lint run ./...`
+- Lint: `golangci-lint run ./...`. When it fails for versionning reasons, fallback to `docker run -t --rm -v $(pwd):/app:z -w /app golangci/golangci-lint:v2.12.2 golangci-lint run ./...`
 
 ## Important Notes
 - Never work in the `main` branch
 - Never commit to `main` branch
-- Never commit. Let the user commit their own changes:w
+- Never commit. Let the user commit their own changes. But suggest a commit message by showing the full `git commit` command.
 - Configuration errors cause immediate exit with os.Exit(1)
 - All file operations use .part suffix during transfer, renamed on success
+- function `backupFile()` backups a single file from the given URL to the destination path. When it returns with a failure, we must know if the error comes from the HTTP client or the local file system.

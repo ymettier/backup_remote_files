@@ -192,7 +192,7 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 		}
 		status.success[backup.ID] = true
 		if RetrieveSuccess, err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
-			// already logged in fileSize(); no need to log here
+			// already logged in fileSize() called by backupFile(); no need to log here
 			metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(0))
 			metric.BackupFailed.With(prometheus.Labels{"id": backup.ID}).Inc()
 			status.success[backup.ID] = RetrieveSuccess

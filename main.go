@@ -83,7 +83,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 			prometheus.CounterOpts{
 				Namespace: namespace,
 				Name:      "backup_nb",
-				Help:      "Number of retreivals",
+				Help:      "Number of retrievals",
 			},
 		),
 	}

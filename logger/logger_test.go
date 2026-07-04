@@ -6,7 +6,6 @@ package logger
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"os"
 	"strings"
@@ -15,21 +14,32 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetOtherTxtLogFile(t *testing.T) {
-	filename := "txt_test.log"
-
-	// Remove the logs file before the test
-	if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(filename)
+func useTempDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(oldDir); err != nil {
+			t.Logf("failed to restore working directory: %v", err)
+		}
+	})
+}
+
+func TestGetOtherTxtLogFile(t *testing.T) {
+	useTempDir(t)
+	filename := "txt_test.log"
 
 	l := newLogger(&LogOptions{Filename: filename})
 	l.Warn("Message")
 	if !assert.FileExists(t, filename) {
 		return
 	}
-
-	defer os.Remove(filename)
 
 	txtFile, err := os.Open(filename)
 	if !assert.NoError(t, err) {
@@ -44,20 +54,14 @@ func TestGetOtherTxtLogFile(t *testing.T) {
 }
 
 func TestGetOtherJsonLogFile(t *testing.T) {
+	useTempDir(t)
 	filename := "json_test.log"
-
-	// Remove the logs file before the test
-	if _, err := os.Stat(filename); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(filename)
-	}
 
 	l := newLogger(&LogOptions{Filename: filename, JSON: true})
 	l.Warn("Message")
 	if !assert.FileExists(t, filename) {
 		return
 	}
-
-	defer os.Remove(filename)
 
 	jsonFile, err := os.Open(filename)
 	if !assert.NoError(t, err) {

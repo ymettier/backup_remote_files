@@ -50,7 +50,7 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 	return configurationFilename, outputFilename, nil
 }
 
-func TestRetrieveUrlsWithExistingTarget(t *testing.T) {
+func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
 	wantedMsg := "Iune0Shaex"
 
 	// Create a web server

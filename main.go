@@ -274,7 +274,7 @@ func main() {
 
 	l.Info("Starting exporter HTTP server", slog.Int("port", cfg.Port))
 	err = server.ListenAndServe()
-	if err != nil {
+	if err != nil && err != http.ErrServerClosed {
 		l.Error("Could not start exporter HTTP server", slog.Any("error", err))
 		os.Exit(1)
 	}

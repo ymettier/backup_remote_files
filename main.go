@@ -197,7 +197,7 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 		l.Info("Retrying failed retrievals")
 	}
 	for _, backup := range cfg.Backups {
-		if (!retrieveAll) && status.success[backup.ID] {
+		if !retrieveAll && status.success[backup.ID] {
 			// no retrieval if not retrieving all and its last retrieval was successful
 			continue
 		}

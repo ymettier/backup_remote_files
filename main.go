@@ -174,6 +174,11 @@ func fileSize(filename string) (int64, error) {
 	return fi.Size(), nil
 }
 
+func recordBackupFailed(metric *metrics, backupID string) {
+	metric.Status.With(prometheus.Labels{"id": backupID}).Set(float64(0))
+	metric.BackupFailed.With(prometheus.Labels{"id": backupID}).Inc()
+}
+
 func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retrieveAll bool) (allRetrievalsSuccess bool) {
 	l := logger.Get()
 	allRetrievalsSuccess = true
@@ -192,9 +197,7 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 		}
 		status.success[backup.ID] = true
 		if RetrieveSuccess, err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
-			// already logged in fileSize() called by backupFile(); no need to log here
-			metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(0))
-			metric.BackupFailed.With(prometheus.Labels{"id": backup.ID}).Inc()
+			recordBackupFailed(metric, backup.ID)
 			status.success[backup.ID] = RetrieveSuccess
 			if !RetrieveSuccess {
 				allRetrievalsSuccess = false
@@ -203,9 +206,7 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 		}
 		size, err := fileSize(backup.OutputFile)
 		if err != nil {
-			// already logged in fileSize(); no need to log here
-			metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(0))
-			metric.BackupFailed.With(prometheus.Labels{"id": backup.ID}).Inc()
+			recordBackupFailed(metric, backup.ID)
 			continue
 		}
 		metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))

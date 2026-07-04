@@ -59,7 +59,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 			prometheus.GaugeOpts{
 				Namespace: namespace,
 				Name:      "backup_size",
-				Help:      "Status of latest backup",
+				Help:      "Size of latest backup",
 			},
 			[]string{"id"},
 		),

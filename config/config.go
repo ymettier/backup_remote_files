@@ -125,45 +125,33 @@ func New(version string) (Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
-	// Check env form (lowercase) first so env vars override YAML values.
-	// Env provider transforms BRF_RETRYINTERVAL -> retryinterval,
-	// while YAML keys use camelCase (retryInterval).
+func lookupConfigKey(k *koanf.Koanf, camelKey string) (string, bool) {
 	envKey := strings.ToLower(camelKey)
 	if k.Exists(envKey) {
-		return k.String(envKey)
+		return k.String(envKey), true
 	}
-	// Check YAML form (camelCase for flat keys like "retryInterval")
 	if k.Exists(camelKey) {
-		return k.String(camelKey)
+		return k.String(camelKey), true
 	}
-	// For nested keys like "logging.level", also check with underscore form
-	// (in case the transformer created underscore version instead of dot)
 	underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
 	if k.Exists(underscoreKey) {
-		return k.String(underscoreKey)
+		return k.String(underscoreKey), true
+	}
+	return "", false
+}
+
+func (c *Config) getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
+	if val, ok := lookupConfigKey(k, camelKey); ok {
+		return val
 	}
 	return defaultValue
 }
 
 func (c *Config) getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
-	var durationStr string
-	// Check env form (lowercase) first so env vars override YAML values.
-	envKey := strings.ToLower(camelKey)
-	if k.Exists(envKey) {
-		durationStr = k.String(envKey)
-	} else if k.Exists(camelKey) {
-		durationStr = k.String(camelKey)
-	} else {
-		// For nested keys like "logging.level", also check with underscore form
-		underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
-		if k.Exists(underscoreKey) {
-			durationStr = k.String(underscoreKey)
-		} else {
-			durationStr = defaultDuration
-		}
+	durationStr := defaultDuration
+	if val, ok := lookupConfigKey(k, camelKey); ok {
+		durationStr = val
 	}
-
 	duration, err := time.ParseDuration(durationStr)
 	if err != nil {
 		return 0, err

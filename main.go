@@ -158,18 +158,18 @@ func backupFile(id, url, username, password, outputFile string) error {
 		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
 		os.Remove(outputFile + ".part")
 		return &httpError{errors.New("HTTP status >= 300")}
-	} else {
-		err := os.Rename(outputFile+".part", outputFile)
-		if err != nil {
-			l.Error("Failed to rename file",
-				slog.String("id", id),
-				slog.String("oldFilename", outputFile+".part"),
-				slog.String("newFilename", outputFile),
-			)
-			return &fsError{err}
-		}
-		l.Info("Successfully retrieved file", slog.String("id", id), slog.String("filename", outputFile))
 	}
+
+	err = os.Rename(outputFile+".part", outputFile)
+	if err != nil {
+		l.Error("Failed to rename file",
+			slog.String("id", id),
+			slog.String("oldFilename", outputFile+".part"),
+			slog.String("newFilename", outputFile),
+		)
+		return &fsError{err}
+	}
+	l.Info("Successfully retrieved file", slog.String("id", id), slog.String("filename", outputFile))
 	return nil
 }
 

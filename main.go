@@ -95,7 +95,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 	return m
 }
 
-func initializeCounters(cfg config.Config, metric *metrics) {
+func initializeCounters(metric *metrics) {
 	metric.BuildInfo.With(prometheus.Labels{
 		"goarch":    runtime.GOARCH,
 		"goos":      runtime.GOOS,
@@ -233,7 +233,7 @@ func main() {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
 	// Create BuildInfo metrics
-	initializeCounters(cfg, m)
+	initializeCounters(m)
 
 	// Track per-backup retrieval status separately from config
 	status := newBackupStatus(cfg.Backups)

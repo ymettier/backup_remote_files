@@ -1,4 +1,4 @@
-// Copyright 2024 The Backup_icf_cvf Authors. All rights reserved.
+// Copyright 2024 The Backup_remote_files Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
 package config

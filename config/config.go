@@ -97,12 +97,11 @@ func parseFlags(version string) CLIFlags {
 }
 
 type Backup struct {
-	ID              string
-	URL             string
-	Username        string
-	Password        string
-	OutputFile      string
-	RetrieveSuccess bool
+	ID         string
+	URL        string
+	Username   string
+	Password   string
+	OutputFile string
 }
 
 type Config struct {
@@ -262,14 +261,13 @@ func (c *Config) readConfig(filename string) error {
 	if k.Exists("backups") {
 		for _, id := range k.MapKeys("backups") {
 			prefix := "backups." + id + "."
-			b := Backup{
-				ID:              id,
-				URL:             k.String(prefix + "url"),
-				Username:        k.String(prefix + "username"),
-				Password:        k.String(prefix + "password"),
-				OutputFile:      k.String(prefix + "outputFile"),
-				RetrieveSuccess: true,
-			}
+		b := Backup{
+			ID:         id,
+			URL:        k.String(prefix + "url"),
+			Username:   k.String(prefix + "username"),
+			Password:   k.String(prefix + "password"),
+			OutputFile: k.String(prefix + "outputFile"),
+		}
 			c.Backups = append(c.Backups, b)
 			l.Info("Config: backup url", slog.String("url", b.URL))
 		}

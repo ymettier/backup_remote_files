@@ -87,7 +87,8 @@ func TestRetrieveUrlsWithExistingTarget(t *testing.T) {
 
 	// Now start the tests
 	// Test retrieveUrls
-	r := retrieveUrls(cfg, m, true)
+	status := newBackupStatus(cfg.Backups)
+	r := retrieveUrls(cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename+".part") {
 		return
 	}
@@ -129,7 +130,8 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 
 	// Now start the tests
 	// Test retrieveUrls
-	r := retrieveUrls(cfg, m, true)
+	status := newBackupStatus(cfg.Backups)
+	r := retrieveUrls(cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename) {
 		return
 	}
@@ -182,7 +184,8 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 
 	// Now start the tests
 	// Test retrieveUrls
-	r := retrieveUrls(cfg, m, true)
+	status := newBackupStatus(cfg.Backups)
+	r := retrieveUrls(cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename) {
 		return
 	}

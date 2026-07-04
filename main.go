@@ -108,6 +108,18 @@ func initializeCounters(cfg config.Config, metric *metrics) {
 	}
 }
 
+type backupStatus struct {
+	success map[string]bool
+}
+
+func newBackupStatus(backups []config.Backup) *backupStatus {
+	s := make(map[string]bool, len(backups))
+	for _, b := range backups {
+		s[b.ID] = true
+	}
+	return &backupStatus{success: s}
+}
+
 func backupFile(id, url, username, password, outputFile string) (retrieveSuccess bool, err error) {
 	l := logger.Get()
 	req, err := http.NewRequestWithContext(context.Background(), "GET", url, http.NoBody)
@@ -166,7 +178,7 @@ func fileSize(filename string) (int64, error) {
 	return fi.Size(), nil
 }
 
-func retrieveUrls(cfg config.Config, metric *metrics, retrieveAll bool) (allRetrievalsSuccess bool) {
+func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retrieveAll bool) (allRetrievalsSuccess bool) {
 	l := logger.Get()
 	allRetrievalsSuccess = true
 	if retrieveAll {
@@ -174,20 +186,20 @@ func retrieveUrls(cfg config.Config, metric *metrics, retrieveAll bool) (allRetr
 	} else {
 		l.Info("Retrying failed retrievals")
 	}
-	for id, backup := range cfg.Backups {
-		if (!retrieveAll) && backup.RetrieveSuccess {
+	for _, backup := range cfg.Backups {
+		if (!retrieveAll) && status.success[backup.ID] {
 			// no retrieval if not retrieving all and it last retrieval was successful
 			continue
 		}
 		if !retrieveAll {
 			l.Info("Retrying...", slog.String("id", backup.ID))
 		}
-		cfg.Backups[id].RetrieveSuccess = true
+		status.success[backup.ID] = true
 		if RetrieveSuccess, err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
 			// already logged in fileSize(); no need to log here
 			metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(0))
 			metric.BackupFailed.With(prometheus.Labels{"id": backup.ID}).Inc()
-			cfg.Backups[id].RetrieveSuccess = RetrieveSuccess
+			status.success[backup.ID] = RetrieveSuccess
 			if !RetrieveSuccess {
 				allRetrievalsSuccess = false
 			}
@@ -227,32 +239,35 @@ func main() {
 	// Create BuildInfo metrics
 	initializeCounters(cfg, m)
 
+	// Track per-backup retrieval status separately from config
+	status := newBackupStatus(cfg.Backups)
+
 	// Create tickers for retrievals
 	ticker := time.NewTicker(cfg.Interval)
 	tickerRetry := time.NewTicker(cfg.RetryInterval)
 
 	// First return
-	if retrieveUrls(cfg, m, true) {
+	if retrieveUrls(cfg, m, status, true) {
 		tickerRetry.Stop()
 	}
 
 	// Go-routine : do backups
-	go func(cfg config.Config, m *metrics) {
+	go func(cfg config.Config, m *metrics, status *backupStatus) {
 		for {
 			select {
 			case <-ticker.C:
-				if retrieveUrls(cfg, m, true) {
+				if retrieveUrls(cfg, m, status, true) {
 					tickerRetry.Stop()
 				} else {
 					tickerRetry.Reset(cfg.RetryInterval)
 				}
 			case <-tickerRetry.C:
-				if retrieveUrls(cfg, m, false) {
+				if retrieveUrls(cfg, m, status, false) {
 					tickerRetry.Stop()
 				}
 			}
 		}
-	}(cfg, m)
+	}(cfg, m, status)
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 

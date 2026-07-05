@@ -127,21 +127,21 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	configContent := fmt.Sprintf(""+
+	configContent := fmt.Sprintf(
 		"backups:\n"+
-		"  a:\n"+
-		"    url: '%s'\n"+
-		"    username: ''\n"+
-		"    password: ''\n"+
-		"    outputFile: 'retry_a.out'\n"+
-		"  b:\n"+
-		"    url: '%s'\n"+
-		"    username: ''\n"+
-		"    password: ''\n"+
-		"    outputFile: 'retry_b.out'\n"+
-		"interval: '1m'\n"+
-		"retryInterval: '10s'\n"+
-		"metricsPrefix: 'backuprf'\n",
+			"  a:\n"+
+			"    url: '%s'\n"+
+			"    username: ''\n"+
+			"    password: ''\n"+
+			"    outputFile: 'retry_a.out'\n"+
+			"  b:\n"+
+			"    url: '%s'\n"+
+			"    username: ''\n"+
+			"    password: ''\n"+
+			"    outputFile: 'retry_b.out'\n"+
+			"interval: '1m'\n"+
+			"retryInterval: '10s'\n"+
+			"metricsPrefix: 'backuprf'\n",
 		ts.URL, ts.URL)
 
 	configFilename := "retry_config.yaml"

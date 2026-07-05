@@ -141,6 +141,11 @@ func backupFile(id, url, username, password, outputFile string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
+		return &httpError{errors.New("HTTP status >= 300")}
+	}
+
 	outputFileFD, err := os.Create(outputFile + ".part")
 	if err != nil {
 		l.Error("Failed to open file for writing", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
@@ -150,14 +155,6 @@ func backupFile(id, url, username, password, outputFile string) error {
 	if _, err = io.Copy(outputFileFD, resp.Body); err != nil {
 		l.Error("Failed to write contents to file", slog.String("id", id), slog.String("filename", outputFile))
 		return &fsError{err}
-	}
-	outputFileFD.Close()
-
-	// code 300 is http.StatusMultipleChoices
-	if resp.StatusCode >= http.StatusMultipleChoices {
-		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
-		os.Remove(outputFile + ".part")
-		return &httpError{errors.New("HTTP status >= 300")}
 	}
 
 	err = os.Rename(outputFile+".part", outputFile)

@@ -32,13 +32,7 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 	configurationFilename = "config." + key + ".yaml"
 	outputFilename = key + ".out"
 
-	f, err := os.Create(configurationFilename)
-	if err != nil {
-		return "", "", err
-	}
-	defer f.Close()
-
-	fmt.Fprintf(f,
+	configContent := fmt.Sprintf(
 		"backups:\n"+
 			"  %s:\n"+
 			"    url: '%s'\n"+
@@ -53,6 +47,10 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 		url,
 		outputFilename,
 	)
+	err = os.WriteFile(configurationFilename, []byte(configContent), 0600)
+	if err != nil {
+		return "", "", err
+	}
 	return configurationFilename, outputFilename, nil
 }
 

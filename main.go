@@ -188,6 +188,26 @@ func recordBackupFailed(metric *metrics, backupID string) {
 	metric.BackupFailed.With(prometheus.Labels{"id": backupID}).Inc()
 }
 
+func processBackup(ctx context.Context, backup config.Backup, metric *metrics, status *backupStatus) (isHTTPError bool) {
+	status.success[backup.ID] = true
+	if err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
+		recordBackupFailed(metric, backup.ID)
+		var target *httpError
+		isHTTP := errors.As(err, &target)
+		status.success[backup.ID] = !isHTTP
+		return isHTTP
+	}
+	size, err := fileSize(backup.OutputFile)
+	if err != nil {
+		recordBackupFailed(metric, backup.ID)
+		return false
+	}
+	metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))
+	metric.Size.With(prometheus.Labels{"id": backup.ID}).Set(float64(size))
+	metric.Time.With(prometheus.Labels{"id": backup.ID}).Set(float64(time.Now().Unix()))
+	return false
+}
+
 func retrieveUrls(ctx context.Context, cfg config.Config, metric *metrics,
 	status *backupStatus, retrieveAll bool) (allRetrievalsSuccess bool) {
 	l := logger.Get()
@@ -199,35 +219,62 @@ func retrieveUrls(ctx context.Context, cfg config.Config, metric *metrics,
 	}
 	for _, backup := range cfg.Backups {
 		if !retrieveAll && status.success[backup.ID] {
-			// no retrieval if not retrieving all and its last retrieval was successful
 			continue
 		}
 		if !retrieveAll {
 			l.Info("Retrying...", slog.String("id", backup.ID))
 		}
-		status.success[backup.ID] = true
-		if err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
-			recordBackupFailed(metric, backup.ID)
-			var target *httpError
-			isHTTP := errors.As(err, &target)
-			status.success[backup.ID] = !isHTTP
-			if isHTTP {
-				allRetrievalsSuccess = false
-			}
-			continue
+		if processBackup(ctx, backup, metric, status) {
+			allRetrievalsSuccess = false
 		}
-		size, err := fileSize(backup.OutputFile)
-		if err != nil {
-			recordBackupFailed(metric, backup.ID)
-			continue
-		}
-		metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))
-		metric.Size.With(prometheus.Labels{"id": backup.ID}).Set(float64(size))
-		metric.Time.With(prometheus.Labels{"id": backup.ID}).Set(float64(time.Now().Unix()))
 	}
 	metric.BackupTotal.Inc()
 	l.Info("End of retrieving files to backup")
 	return allRetrievalsSuccess
+}
+
+func runBackupLoop(ctx context.Context, cfg config.Config, m *metrics, status *backupStatus, ticker, tickerRetry *time.Ticker) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if retrieveUrls(ctx, cfg, m, status, true) {
+				tickerRetry.Stop()
+			} else {
+				tickerRetry.Reset(cfg.RetryInterval)
+			}
+		case <-tickerRetry.C:
+			if retrieveUrls(ctx, cfg, m, status, false) {
+				tickerRetry.Stop()
+			}
+		}
+	}
+}
+
+func startMetricsServer(ctx context.Context, reg *prometheus.Registry, port int) error {
+	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
+
+	server := &http.Server{
+		Addr:              ":" + strconv.Itoa(port),
+		ReadHeaderTimeout: 3 * time.Second,
+	}
+
+	go func() { //nolint:gosec
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:mnd
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
+	l := logger.Get()
+	l.Info("Starting exporter HTTP server", slog.Int("port", port))
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		l.Error("Could not start exporter HTTP server", slog.Any("error", err))
+		return err
+	}
+
+	return nil
 }
 
 func run(ctx context.Context) error {
@@ -239,8 +286,6 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	l := logger.Get()
 
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
@@ -256,46 +301,9 @@ func run(ctx context.Context) error {
 		tickerRetry.Stop()
 	}
 
-	go func(cfg config.Config, m *metrics, status *backupStatus) {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if retrieveUrls(ctx, cfg, m, status, true) {
-					tickerRetry.Stop()
-				} else {
-					tickerRetry.Reset(cfg.RetryInterval)
-				}
-			case <-tickerRetry.C:
-				if retrieveUrls(ctx, cfg, m, status, false) {
-					tickerRetry.Stop()
-				}
-			}
-		}
-	}(cfg, m, status)
+	go runBackupLoop(ctx, cfg, m, status, ticker, tickerRetry)
 
-	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-
-	server := &http.Server{
-		Addr:              ":" + strconv.Itoa(cfg.Port),
-		ReadHeaderTimeout: 3 * time.Second,
-	}
-
-	go func() { //nolint:gosec
-		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:mnd
-		defer cancel()
-		_ = server.Shutdown(shutdownCtx)
-	}()
-
-	l.Info("Starting exporter HTTP server", slog.Int("port", cfg.Port))
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		l.Error("Could not start exporter HTTP server", slog.Any("error", err))
-		return err
-	}
-
-	return nil
+	return startMetricsServer(ctx, reg, cfg.Port)
 }
 
 func main() {

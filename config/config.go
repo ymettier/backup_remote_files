@@ -139,14 +139,14 @@ func lookupConfigKey(k *koanf.Koanf, camelKey string) (string, bool) {
 	return "", false
 }
 
-func (c *Config) getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
+func getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
 	if val, ok := lookupConfigKey(k, camelKey); ok {
 		return val
 	}
 	return defaultValue
 }
 
-func (c *Config) getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
+func getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
 	durationStr := defaultDuration
 	if val, ok := lookupConfigKey(k, camelKey); ok {
 		durationStr = val
@@ -225,7 +225,7 @@ func (c *Config) readConfig(filename string) error {
 	}
 	// Interval
 	var err error
-	c.Interval, err = c.getConfigDuration(k, "interval", "24h")
+	c.Interval, err = getConfigDuration(k, "interval", "24h")
 	if err != nil {
 		l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
 		return err
@@ -233,7 +233,7 @@ func (c *Config) readConfig(filename string) error {
 	l.Info("Config: interval", slog.String("interval", c.Interval.String()))
 
 	// RetryInterval
-	c.RetryInterval, err = c.getConfigDuration(k, "retryInterval", "1d")
+	c.RetryInterval, err = getConfigDuration(k, "retryInterval", "1d")
 	if err != nil {
 		l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
 		return err
@@ -241,7 +241,7 @@ func (c *Config) readConfig(filename string) error {
 	l.Info("Config: retryInterval", slog.String("retryInterval", c.RetryInterval.String()))
 
 	// Metrics prefix
-	c.MetricsPrefix = c.getConfigString(k, "metricsPrefix", "backupremotefiles")
+	c.MetricsPrefix = getConfigString(k, "metricsPrefix", "backupremotefiles")
 	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
 
 	c.Backups = make([]Backup, 0)

@@ -56,7 +56,7 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 	return configurationFilename, outputFilename, nil
 }
 
-func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
+func TestRetrieveUrls_TargetIsDirectory(t *testing.T) {
 	testutil.UseTempDir(t)
 	wantedMsg := "Iune0Shaex"
 

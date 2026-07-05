@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,8 @@ import (
 	"backup_remote_files/config"
 	"backup_remote_files/testutil"
 )
+
+const programName = "./backup_remote_files"
 
 func createConfigFile(key, url string) (configurationFilename, outputFilename string, err error) {
 	configurationFilename = "config." + key + ".yaml"
@@ -228,7 +231,7 @@ func TestInitializeCounters(t *testing.T) {
 }
 
 func TestBackupFile_InvalidURL(t *testing.T) {
-	err := backupFile(context.Background(), "test", "://invalid", "", "", "test.out")
+	_, err := backupFile(context.Background(), "test", "://invalid", "", "", "test.out")
 	assert.Error(t, err)
 
 	var target *httpError
@@ -241,7 +244,7 @@ func TestBackupFile_HTTPDoError(t *testing.T) {
 	}))
 	ts.Close()
 
-	err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out")
+	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out")
 
 	assert.Error(t, err)
 	var target *httpError
@@ -255,7 +258,7 @@ func TestBackupFile_CreateFileError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	err := backupFile(context.Background(), "test", ts.URL, "", "", "nonexistent_dir/file.out")
+	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "nonexistent_dir/file.out")
 
 	assert.Error(t, err)
 	var target *fsError
@@ -272,7 +275,7 @@ func TestBackupFile_CopyError(t *testing.T) {
 	err := os.Symlink("/dev/full", "test.out.part")
 	assert.NoError(t, err)
 
-	err = backupFile(context.Background(), "test", ts.URL, "", "", "test.out")
+	_, err = backupFile(context.Background(), "test", ts.URL, "", "", "test.out")
 
 	assert.Error(t, err)
 	var target *fsError
@@ -497,7 +500,7 @@ func TestRun_ServesMetrics(t *testing.T) {
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"./backup_remote_files", "-c", configFile, "-p", strconv.Itoa(port)}
+	os.Args = []string{programName, "-c", configFile, "-p", strconv.Itoa(port)} //nolint:goconst
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -538,13 +541,211 @@ func TestRun_ServesMetrics(t *testing.T) {
 	}
 }
 
+func TestFileSize_Success(t *testing.T) {
+	testutil.UseTempDir(t)
+	err := os.WriteFile("test.txt", []byte("hello"), 0600)
+	require.NoError(t, err)
+	size, err := fileSize("test.txt")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(5), size)
+}
+
+func TestRun_ParseFlagsError(t *testing.T) {
+	testutil.UseTempDir(t)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{programName, "--unknown-flag"}
+
+	err := run(context.Background())
+	assert.Error(t, err)
+}
+
 func TestRun_ConfigError(t *testing.T) {
 	testutil.UseTempDir(t)
 
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"./backup_remote_files", "-c", "nonexistent.yaml"}
+	os.Args = []string{programName, "-c", "nonexistent.yaml"}
 
 	err := run(context.Background())
 	assert.Error(t, err)
+}
+
+func TestStartMetricsServer_PortConflict(t *testing.T) {
+	port := getFreePort(t)
+
+	var lc net.ListenConfig
+	l, err := lc.Listen(context.Background(), "tcp", ":"+strconv.Itoa(port))
+	require.NoError(t, err)
+	defer l.Close()
+
+	reg := prometheus.NewRegistry()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- startMetricsServer(ctx, reg, port)
+	}()
+
+	select {
+	case err := <-errCh:
+		assert.Error(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("startMetricsServer did not return an error")
+	}
+}
+
+func TestRunBackupLoop_RetryReset(t *testing.T) {
+	testutil.UseTempDir(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	cfg := config.Config{
+		Port:          9999,
+		Backups:       []config.Backup{{ID: "fail", URL: ts.URL, OutputFile: "fail.out"}},
+		Interval:      10 * time.Millisecond,
+		RetryInterval: 1 * time.Hour,
+		MetricsPrefix: "reset_test",
+	}
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+	status := newBackupStatus(cfg.Backups)
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	tickerRetry := time.NewTicker(1 * time.Hour)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	runBackupLoop(ctx, cfg, m, status, ticker, tickerRetry)
+
+	families, err := reg.Gather()
+	require.NoError(t, err)
+	failedFamily := findMetric(families, "reset_test_backup_failed")
+	require.NotNil(t, failedFamily)
+	assert.GreaterOrEqual(t, failedFamily.GetMetric()[0].GetCounter().GetValue(), float64(1))
+}
+
+func TestRunBackupLoop_TickerFires(t *testing.T) {
+	tests := []struct {
+		name          string
+		interval      time.Duration
+		retryInterval time.Duration
+		prefix        string
+	}{
+		{
+			name:          "regular ticker fires",
+			interval:      10 * time.Millisecond,
+			retryInterval: 1 * time.Hour,
+			prefix:        "ticker_test",
+		},
+		{
+			name:          "retry ticker fires",
+			interval:      1 * time.Hour,
+			retryInterval: 10 * time.Millisecond,
+			prefix:        "retry_ticker_test",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Config{
+				Port:          9999,
+				Backups:       []config.Backup{},
+				Interval:      tt.interval,
+				RetryInterval: tt.retryInterval,
+				MetricsPrefix: tt.prefix,
+			}
+			reg := prometheus.NewRegistry()
+			m := NewMetrics(reg, cfg.MetricsPrefix)
+			status := newBackupStatus(cfg.Backups)
+
+			ticker := time.NewTicker(tt.interval)
+			tickerRetry := time.NewTicker(tt.retryInterval)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+
+			runBackupLoop(ctx, cfg, m, status, ticker, tickerRetry)
+
+			families, err := reg.Gather()
+			require.NoError(t, err)
+			totalFamily := findMetric(families, tt.prefix+"_backup_nb")
+			require.NotNil(t, totalFamily)
+			assert.GreaterOrEqual(t, totalFamily.GetMetric()[0].GetCounter().GetValue(), float64(1))
+		})
+	}
+}
+
+func TestRunBackupLoop_Retry(t *testing.T) {
+	testutil.UseTempDir(t)
+	port := getFreePort(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	configContent := fmt.Sprintf(
+		"backups:\n"+
+			"  retry_test:\n"+
+			"    url: '%s'\n"+
+			"    username: ''\n"+
+			"    password: ''\n"+
+			"    outputFile: 'retry_test.out'\n"+
+			"\n"+
+			"interval: '1h'\n"+
+			"retryInterval: '50ms'\n"+
+			"metricsPrefix: 'retry_test'\n",
+		ts.URL,
+	)
+	configFile := "retry_loop_config.yaml"
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{programName, "-c", configFile, "-p", strconv.Itoa(port)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ctx)
+	}()
+
+	client := &http.Client{}
+	var body []byte
+	for range 80 {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://localhost:%d/metrics", port), http.NoBody)
+		if reqErr != nil {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		resp, getErr := client.Do(req)
+		if getErr != nil {
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		body, err = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		require.NoError(t, err)
+		if strings.Contains(string(body), "retry_test_backup_nb 2") {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.Contains(t, string(body), "retry_test_backup_nb 2")
+
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run() did not return after cancellation")
+	}
 }

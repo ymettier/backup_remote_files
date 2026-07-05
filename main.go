@@ -128,36 +128,37 @@ type fsError struct{ error }
 
 func (e *fsError) Unwrap() error { return e.error }
 
-func backupFile(ctx context.Context, id, url, username, password, outputFile string) error {
+func backupFile(ctx context.Context, id, url, username, password, outputFile string) (int64, error) {
 	l := logger.Get()
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		l.Error("Failed to create new request", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
-		return &httpError{err}
+		return 0, &httpError{err}
 	}
 	req.SetBasicAuth(username, password)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		l.Error("Failed to read data", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
-		return &httpError{err}
+		return 0, &httpError{err}
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
-		return &httpError{errors.New("HTTP status >= 300")}
+		return 0, &httpError{errors.New("HTTP status >= 300")}
 	}
 
 	outputFileFD, err := os.Create(outputFile + ".part")
 	if err != nil {
 		l.Error("Failed to open file for writing", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
-		return &fsError{err}
+		return 0, &fsError{err}
 	}
 	defer outputFileFD.Close()
-	if _, err = io.Copy(outputFileFD, resp.Body); err != nil {
+	written, err := io.Copy(outputFileFD, resp.Body)
+	if err != nil {
 		l.Error("Failed to write contents to file", slog.String("id", id), slog.String("filename", outputFile))
-		return &fsError{err}
+		return 0, &fsError{err}
 	}
 
 	err = os.Rename(outputFile+".part", outputFile)
@@ -167,10 +168,10 @@ func backupFile(ctx context.Context, id, url, username, password, outputFile str
 			slog.String("oldFilename", outputFile+".part"),
 			slog.String("newFilename", outputFile),
 		)
-		return &fsError{err}
+		return 0, &fsError{err}
 	}
 	l.Info("Successfully retrieved file", slog.String("id", id), slog.String("filename", outputFile))
-	return nil
+	return written, nil
 }
 
 func fileSize(filename string) (int64, error) {
@@ -190,17 +191,13 @@ func recordBackupFailed(metric *metrics, backupID string) {
 
 func processBackup(ctx context.Context, backup *config.Backup, metric *metrics, status *backupStatus) (isHTTPError bool) {
 	status.success[backup.ID] = true
-	if err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
+	size, err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile)
+	if err != nil {
 		recordBackupFailed(metric, backup.ID)
 		var target *httpError
 		isHTTP := errors.As(err, &target)
 		status.success[backup.ID] = !isHTTP
 		return isHTTP
-	}
-	size, err := fileSize(backup.OutputFile)
-	if err != nil {
-		recordBackupFailed(metric, backup.ID)
-		return false
 	}
 	metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))
 	metric.Size.With(prometheus.Labels{"id": backup.ID}).Set(float64(size))
@@ -253,11 +250,13 @@ func runBackupLoop(ctx context.Context, cfg config.Config, m *metrics, status *b
 }
 
 func startMetricsServer(ctx context.Context, reg *prometheus.Registry, port int) error {
-	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 
 	server := &http.Server{
 		Addr:              ":" + strconv.Itoa(port),
 		ReadHeaderTimeout: 3 * time.Second,
+		Handler:           mux,
 	}
 
 	go func() { //nolint:gosec

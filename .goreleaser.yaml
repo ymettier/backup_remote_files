@@ -36,12 +36,7 @@ archives:
     # use zip for windows archives
 
 changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "-rc*"
+  use: github-native
 
 release:
   draft: true

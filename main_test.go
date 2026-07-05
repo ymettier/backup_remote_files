@@ -66,13 +66,13 @@ func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
 	defer ts.Close()
 
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	err = os.Mkdir(outputFilename, 0750)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
@@ -95,10 +95,10 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 	defer ts.Close()
 
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
@@ -148,10 +148,10 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 
 	configFilename := "retry_config.yaml"
 	err := os.WriteFile(configFilename, []byte(configContent), 0600)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	cfg, err := config.New(configFilename, 9289)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
@@ -170,7 +170,7 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 		return
 	}
 	outputFile, err := os.Open("retry_b.out")
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	defer outputFile.Close()
 	byteValue, _ := io.ReadAll(outputFile)
 	assert.Equal(t, string(byteValue), wantedMsg+"\n")
@@ -184,18 +184,18 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := w.Write([]byte("Internal Server Error"))
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}))
 	defer ts.Close()
 
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
@@ -342,10 +342,10 @@ func TestMetricsValues(t *testing.T) {
 	defer ts.Close()
 
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
@@ -383,18 +383,18 @@ func TestMetricsValues_BrokenServer(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := w.Write([]byte("Internal Server Error"))
-		assert.Nil(t, err)
+		assert.NoError(t, err)
 	}))
 	defer ts.Close()
 
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
@@ -433,10 +433,10 @@ func TestMetricsValues_FileSizeError(t *testing.T) {
 	defer ts.Close()
 
 	configurationFilename, _, err := createConfigFile(wantedMsg, ts.URL)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	// Override the output path to a directory so rename fails
 	cfg.Backups[0].OutputFile = "."

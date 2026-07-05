@@ -35,7 +35,7 @@ retryInterval: "1h"
 metricsPrefix: "default_prefix"
 `
 	err := os.WriteFile("test_env_config.yaml", []byte(configContent), 0600)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	os.Setenv("BRF_INTERVAL", "2h")
 	os.Setenv("BRF_RETRYINTERVAL", "30m")
@@ -47,7 +47,7 @@ metricsPrefix: "default_prefix"
 	}()
 
 	cfg, err := New("test_env_config.yaml", defaultPort)
-	assert.Nil(t, err)
+	assert.NoError(t, err)
 
 	assert.Equal(t, "2h0m0s", cfg.Interval.String())
 	assert.Equal(t, "30m0s", cfg.RetryInterval.String())

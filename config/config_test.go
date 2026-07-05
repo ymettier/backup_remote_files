@@ -46,11 +46,7 @@ metricsPrefix: "default_prefix"
 		os.Unsetenv("BRF_METRICSPREFIX")
 	}()
 
-	oldArgs := os.Args
-	os.Args = []string{"test", "-c", "test_env_config.yaml"}
-	defer func() { os.Args = oldArgs }()
-
-	cfg, err := New("test")
+	cfg, err := New("test_env_config.yaml", defaultPort)
 	assert.Nil(t, err)
 
 	assert.Equal(t, "2h0m0s", cfg.Interval.String())

@@ -61,7 +61,7 @@ type CLIFlags struct {
 	Port       int
 }
 
-func parseFlags(version string) CLIFlags {
+func ParseFlags(version string, args []string) CLIFlags {
 	fs := pflag.NewFlagSet("backup_remote_files", pflag.ContinueOnError)
 
 	configFile := fs.StringP("config", "c", "", "Configuration file (required)")
@@ -69,7 +69,7 @@ func parseFlags(version string) CLIFlags {
 	showVersion := fs.BoolP("version", "V", false, "Show version info")
 	showHelp := fs.BoolP("help", "h", false, "Print help")
 
-	if err := fs.Parse(os.Args[1:]); err != nil {
+	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
 		os.Exit(1)
 	}
@@ -112,12 +112,11 @@ type Config struct {
 	MetricsPrefix string
 }
 
-func New(version string) (Config, error) {
-	flags := parseFlags(version)
+func New(configFile string, port int) (Config, error) {
 	var cfg Config
-	cfg.Port = flags.Port
+	cfg.Port = port
 
-	err := cfg.readConfig(flags.ConfigFile)
+	err := cfg.readConfig(configFile)
 	if err != nil {
 		return cfg, err
 	}

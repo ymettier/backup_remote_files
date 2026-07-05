@@ -68,12 +68,7 @@ func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
 	err = os.Mkdir(outputFilename, 0750)
 	assert.Nil(t, err)
 
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename} //nolint:goconst
-
-	cfg, err := config.New("0.0.0")
+	cfg, err := config.New(configurationFilename, 9289)
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
@@ -99,12 +94,7 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
 
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
-
-	cfg, err := config.New("0.0.0")
+	cfg, err := config.New(configurationFilename, 9289)
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
@@ -157,11 +147,7 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 	err := os.WriteFile(configFilename, []byte(configContent), 0600)
 	assert.Nil(t, err)
 
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"./backup_remote_files", "-c", configFilename}
-
-	cfg, err := config.New("0.0.0")
+	cfg, err := config.New(configFilename, 9289)
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
@@ -205,12 +191,7 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
 	assert.Nil(t, err)
 
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
-
-	cfg, err := config.New("0.0.0")
+	cfg, err := config.New(configurationFilename, 9289)
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
@@ -365,11 +346,7 @@ func TestMetricsValues(t *testing.T) {
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
 
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
-
-	cfg, err := config.New("0.0.0")
+	cfg, err := config.New(configurationFilename, 9289)
 	assert.Nil(t, err)
 
 	reg := prometheus.NewRegistry()
@@ -418,11 +395,7 @@ func TestMetricsValues_BrokenServer(t *testing.T) {
 	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
 	assert.Nil(t, err)
 
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
-
-	cfg, err := config.New("0.0.0")
+	cfg, err := config.New(configurationFilename, 9289)
 	assert.Nil(t, err)
 
 	reg := prometheus.NewRegistry()
@@ -464,11 +437,7 @@ func TestMetricsValues_FileSizeError(t *testing.T) {
 	configurationFilename, _, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
 
-	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }()
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
-
-	cfg, err := config.New("0.0.0")
+	cfg, err := config.New(configurationFilename, 9289)
 	assert.Nil(t, err)
 
 	// Override the output path to a directory so fileSize fails

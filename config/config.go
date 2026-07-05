@@ -1,4 +1,4 @@
-// Copyright 2024 The Backup_icf_cvf Authors. All rights reserved.
+// Copyright 2024 The Backup_remote_files Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
 package config
@@ -97,12 +97,11 @@ func parseFlags(version string) CLIFlags {
 }
 
 type Backup struct {
-	ID              string
-	URL             string
-	Username        string
-	Password        string
-	OutputFile      string
-	RetrieveSuccess bool
+	ID         string
+	URL        string
+	Username   string
+	Password   string
+	OutputFile string
 }
 
 type Config struct {
@@ -126,45 +125,33 @@ func New(version string) (Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
-	// Check env form (lowercase) first so env vars override YAML values.
-	// Env provider transforms BRF_RETRYINTERVAL -> retryinterval,
-	// while YAML keys use camelCase (retryInterval).
+func lookupConfigKey(k *koanf.Koanf, camelKey string) (string, bool) {
 	envKey := strings.ToLower(camelKey)
 	if k.Exists(envKey) {
-		return k.String(envKey)
+		return k.String(envKey), true
 	}
-	// Check YAML form (camelCase for flat keys like "retryInterval")
 	if k.Exists(camelKey) {
-		return k.String(camelKey)
+		return k.String(camelKey), true
 	}
-	// For nested keys like "logging.level", also check with underscore form
-	// (in case the transformer created underscore version instead of dot)
 	underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
 	if k.Exists(underscoreKey) {
-		return k.String(underscoreKey)
+		return k.String(underscoreKey), true
+	}
+	return "", false
+}
+
+func (c *Config) getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
+	if val, ok := lookupConfigKey(k, camelKey); ok {
+		return val
 	}
 	return defaultValue
 }
 
 func (c *Config) getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
-	var durationStr string
-	// Check env form (lowercase) first so env vars override YAML values.
-	envKey := strings.ToLower(camelKey)
-	if k.Exists(envKey) {
-		durationStr = k.String(envKey)
-	} else if k.Exists(camelKey) {
-		durationStr = k.String(camelKey)
-	} else {
-		// For nested keys like "logging.level", also check with underscore form
-		underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
-		if k.Exists(underscoreKey) {
-			durationStr = k.String(underscoreKey)
-		} else {
-			durationStr = defaultDuration
-		}
+	durationStr := defaultDuration
+	if val, ok := lookupConfigKey(k, camelKey); ok {
+		durationStr = val
 	}
-
 	duration, err := time.ParseDuration(durationStr)
 	if err != nil {
 		return 0, err
@@ -213,9 +200,7 @@ func (c *Config) readConfig(filename string) error {
 	// Initialize Koanf with YAML parser
 	k := koanf.New(".")
 	if err := k.Load(file.Provider(filename), yaml.Parser()); err != nil {
-		l.Error("Failed to read configuration file", slog.String("file", filename), slog.Any("error", err))
-		os.Exit(1)
-		return err
+		return fmt.Errorf("failed to read configuration file %s: %w", filename, err)
 	}
 
 	// Load environment variables with BRF_ prefix (overrides YAML values)
@@ -230,9 +215,7 @@ func (c *Config) readConfig(filename string) error {
 		s = strings.ReplaceAll(s, "_", ".")
 		return s
 	}), nil); err != nil {
-		l.Error("Failed to load environment variables", slog.Any("error", err))
-		os.Exit(1)
-		return err
+		return fmt.Errorf("failed to load environment variables: %w", err)
 	}
 
 	// Logging configuration
@@ -264,16 +247,15 @@ func (c *Config) readConfig(filename string) error {
 
 	c.Backups = make([]Backup, 0)
 	if k.Exists("backups") {
-		backups := k.Get("backups").(map[string]any)
-		for id, v := range backups {
-			var b Backup
-			fb := v.(map[string]any)
-			b.ID = id
-			b.URL = fb["url"].(string)
-			b.Username = fb["username"].(string)
-			b.Password = fb["password"].(string)
-			b.OutputFile = fb["outputFile"].(string)
-			b.RetrieveSuccess = true // initialize status in safe state
+		for _, id := range k.MapKeys("backups") {
+			prefix := "backups." + id + "."
+			b := Backup{
+				ID:         id,
+				URL:        k.String(prefix + "url"),
+				Username:   k.String(prefix + "username"),
+				Password:   k.String(prefix + "password"),
+				OutputFile: k.String(prefix + "outputFile"),
+			}
 			c.Backups = append(c.Backups, b)
 			l.Info("Config: backup url", slog.String("url", b.URL))
 		}

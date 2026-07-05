@@ -5,6 +5,7 @@ package main
 
 import (
 	"backup_remote_files/config"
+	"backup_remote_files/testutil"
 	"errors"
 	"fmt"
 	"io"
@@ -14,17 +15,14 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func createConfigFile(key, url string) (configurationFilename, outputFilename string, err error) {
 	configurationFilename = "config." + key + ".yaml"
 	outputFilename = key + ".out"
-
-	// Remove the configuration file if it already exists
-	if _, err := os.Stat(configurationFilename); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(configurationFilename)
-	}
 
 	f, err := os.Create(configurationFilename)
 	if err != nil {
@@ -50,90 +48,67 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 	return configurationFilename, outputFilename, nil
 }
 
-func TestRetrieveUrlsWithExistingTarget(t *testing.T) {
+func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
+	testutil.UseTempDir(t)
 	wantedMsg := "Iune0Shaex"
 
-	// Create a web server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, wantedMsg)
 	}))
 	defer ts.Close()
 
-	// Generate the configuration file
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
-	defer os.Remove(configurationFilename)
 
-	// Remove the output file if it already exists
-	if _, err := os.Stat(outputFilename); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(outputFilename)
-	}
-	// Create a directory with the same name as the output file to generate an error
 	err = os.Mkdir(outputFilename, 0750)
 	assert.Nil(t, err)
-	defer os.RemoveAll(outputFilename)
 
-	// Change args to be able to run like main()
 	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }() // os.Args is a "global variable", so keep the state from before the test, and restore it after.
+	defer func() { os.Args = oldArgs }()
 
-	os.Args = []string{"./backup_remote_files", "-c", configurationFilename} //nolint:goconst // args is better explicit here
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename} //nolint:goconst
 
-	// from main.go
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Now start the tests
-	// Test retrieveUrls
-	r := retrieveUrls(cfg, m, true)
+	status := newBackupStatus(cfg.Backups)
+	r := retrieveUrls(cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename+".part") {
 		return
 	}
-	defer os.Remove(outputFilename + ".part")
 
 	assert.True(t, r)
 }
 
 func TestRetrieveUrlsSimple(t *testing.T) {
+	testutil.UseTempDir(t)
 	wantedMsg := "voh0ahch3E"
 
-	// Create a web server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintln(w, wantedMsg)
 	}))
 	defer ts.Close()
 
-	// Generate the configuration file
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
-	defer os.Remove(configurationFilename)
 
-	// Remove the output file if it already exists
-	if _, err := os.Stat(outputFilename); !errors.Is(err, os.ErrNotExist) {
-		os.Remove(outputFilename)
-	}
-
-	// Change args to be able to run like main()
 	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }() // os.Args is a "global variable", so keep the state from before the test, and restore it after.
+	defer func() { os.Args = oldArgs }()
 
 	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
 
-	// from main.go
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Now start the tests
-	// Test retrieveUrls
-	r := retrieveUrls(cfg, m, true)
+	status := newBackupStatus(cfg.Backups)
+	r := retrieveUrls(cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename) {
 		return
 	}
-	defer os.Remove(outputFilename)
 
 	assert.True(t, r)
 
@@ -147,11 +122,71 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 	assert.Equal(t, string(byteValue), wantedMsg+"\n")
 }
 
+func TestRetrieveUrlsRetry(t *testing.T) {
+	testutil.UseTempDir(t)
+	wantedMsg := "Iune0Shaex"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, wantedMsg)
+	}))
+	defer ts.Close()
+
+	configContent := fmt.Sprintf(""+
+		"backups:\n"+
+		"  a:\n"+
+		"    url: '%s'\n"+
+		"    username: ''\n"+
+		"    password: ''\n"+
+		"    outputFile: 'retry_a.out'\n"+
+		"  b:\n"+
+		"    url: '%s'\n"+
+		"    username: ''\n"+
+		"    password: ''\n"+
+		"    outputFile: 'retry_b.out'\n"+
+		"interval: '1m'\n"+
+		"retryInterval: '10s'\n"+
+		"metricsPrefix: 'backuprf'\n",
+		ts.URL, ts.URL)
+
+	configFilename := "retry_config.yaml"
+	err := os.WriteFile(configFilename, []byte(configContent), 0600)
+	assert.Nil(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configFilename}
+
+	cfg, err := config.New("0.0.0")
+	assert.Nil(t, err)
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+
+	status := newBackupStatus(cfg.Backups)
+	status.success["a"] = true
+	status.success["b"] = false
+
+	r := retrieveUrls(cfg, m, status, false)
+
+	assert.True(t, r)
+
+	_, err = os.Stat("retry_a.out")
+	assert.True(t, os.IsNotExist(err), "successful backup should not be retried")
+
+	if !assert.FileExists(t, "retry_b.out") {
+		return
+	}
+	outputFile, err := os.Open("retry_b.out")
+	assert.Nil(t, err)
+	defer outputFile.Close()
+	byteValue, _ := io.ReadAll(outputFile)
+	assert.Equal(t, string(byteValue), wantedMsg+"\n")
+}
+
 func TestRetrieveUrlsBroken(t *testing.T) {
+	testutil.UseTempDir(t)
 	wantedMsg := "aiK8eephiT"
 	oldMsg := "old"
 
-	// Create a web server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err := w.Write([]byte("Internal Server Error"))
@@ -159,36 +194,27 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Generate the configuration file
 	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
 	assert.Nil(t, err)
-	defer os.Remove(configurationFilename)
 
-	// Create a file with "old" contents
 	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
 	assert.Nil(t, err)
 
-	// Change args to be able to run like main()
 	oldArgs := os.Args
-	defer func() { os.Args = oldArgs }() // os.Args is a "global variable", so keep the state from before the test, and restore it after.
+	defer func() { os.Args = oldArgs }()
 
 	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
 
-	// from main.go
 	cfg, err := config.New("0.0.0")
 	assert.Nil(t, err)
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Now start the tests
-	// Test retrieveUrls
-	r := retrieveUrls(cfg, m, true)
-	if !assert.FileExists(t, outputFilename) {
-		return
-	}
-	defer os.Remove(outputFilename)
+	status := newBackupStatus(cfg.Backups)
+	r := retrieveUrls(cfg, m, status, true)
+	assert.FileExists(t, outputFilename)
 
-	assert.True(t, r)
+	assert.False(t, r)
 
 	outputFile, err := os.Open(outputFilename)
 	if !assert.NoError(t, err) {
@@ -198,4 +224,263 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 
 	byteValue, _ := io.ReadAll(outputFile)
 	assert.Equal(t, string(byteValue), oldMsg)
+}
+
+func TestFileSize_NotFound(t *testing.T) {
+	_, err := fileSize("nonexistent_file")
+	assert.Error(t, err)
+}
+
+func TestInitializeCounters(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, "test")
+	initializeCounters(m)
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+	assert.NotEmpty(t, families)
+}
+
+func TestBackupFile_InvalidURL(t *testing.T) {
+	err := backupFile("test", "://invalid", "", "", "test.out")
+	assert.Error(t, err)
+
+	var target *httpError
+	assert.True(t, errors.As(err, &target))
+}
+
+func TestBackupFile_HTTPDoError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "test")
+	}))
+	ts.Close()
+
+	err := backupFile("test", ts.URL, "", "", "test.out")
+
+	assert.Error(t, err)
+	var target *httpError
+	assert.True(t, errors.As(err, &target))
+}
+
+func TestBackupFile_CreateFileError(t *testing.T) {
+	testutil.UseTempDir(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "test")
+	}))
+	defer ts.Close()
+
+	err := backupFile("test", ts.URL, "", "", "nonexistent_dir/file.out")
+
+	assert.Error(t, err)
+	var target *fsError
+	assert.True(t, errors.As(err, &target))
+}
+
+func TestBackupFile_CopyError(t *testing.T) {
+	testutil.UseTempDir(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "test")
+	}))
+	defer ts.Close()
+
+	err := os.Symlink("/dev/full", "test.out.part")
+	assert.NoError(t, err)
+
+	err = backupFile("test", ts.URL, "", "", "test.out")
+
+	assert.Error(t, err)
+	var target *fsError
+	assert.True(t, errors.As(err, &target))
+}
+
+func TestHTTPError_Unwrap(t *testing.T) {
+	inner := errors.New("inner")
+	err := &httpError{inner}
+	assert.Equal(t, inner, errors.Unwrap(err))
+}
+
+func TestFSError_Unwrap(t *testing.T) {
+	inner := errors.New("inner")
+	err := &fsError{inner}
+	assert.Equal(t, inner, errors.Unwrap(err))
+}
+
+func TestRecordBackupFailed(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, "test")
+	initializeCounters(m)
+
+	recordBackupFailed(m, "test_id")
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+
+	failedFamily := findMetric(families, "test_backup_failed")
+	require.NotNil(t, failedFamily)
+	metric := findMetricWithID(failedFamily, "test_id")
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(1), metric.GetCounter().GetValue())
+
+	statusFamily := findMetric(families, "test_backup_status")
+	require.NotNil(t, statusFamily)
+	metric = findMetricWithID(statusFamily, "test_id")
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(0), metric.GetGauge().GetValue())
+}
+
+func findMetric(families []*dto.MetricFamily, name string) *dto.MetricFamily {
+	for _, f := range families {
+		if f.GetName() == name {
+			return f
+		}
+	}
+	return nil
+}
+
+func findMetricWithID(family *dto.MetricFamily, id string) *dto.Metric {
+	for _, m := range family.GetMetric() {
+		for _, l := range m.GetLabel() {
+			if l.GetName() == "id" && l.GetValue() == id { //nolint:goconst
+				return m
+			}
+		}
+	}
+	return nil
+}
+
+func TestMetricsValues(t *testing.T) {
+	testutil.UseTempDir(t)
+	wantedMsg := "metrics_test"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, wantedMsg)
+	}))
+	defer ts.Close()
+
+	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
+	assert.Nil(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+
+	cfg, err := config.New("0.0.0")
+	assert.Nil(t, err)
+
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+	status := newBackupStatus(cfg.Backups)
+
+	r := retrieveUrls(cfg, m, status, true)
+	assert.True(t, r)
+	defer os.Remove(outputFilename)
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+
+	statusFamily := findMetric(families, "backuprf_backup_status")
+	require.NotNil(t, statusFamily)
+	metric := findMetricWithID(statusFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(1), metric.GetGauge().GetValue())
+
+	sizeFamily := findMetric(families, "backuprf_backup_size")
+	require.NotNil(t, sizeFamily)
+	metric = findMetricWithID(sizeFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Greater(t, metric.GetGauge().GetValue(), float64(0))
+
+	totalFamily := findMetric(families, "backuprf_backup_nb")
+	require.NotNil(t, totalFamily)
+	assert.Equal(t, float64(1), totalFamily.GetMetric()[0].GetCounter().GetValue())
+}
+
+func TestMetricsValues_BrokenServer(t *testing.T) {
+	testutil.UseTempDir(t)
+	wantedMsg := "metrics_broken"
+	oldMsg := "old"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, err := w.Write([]byte("Internal Server Error"))
+		assert.Nil(t, err)
+	}))
+	defer ts.Close()
+
+	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
+	assert.Nil(t, err)
+
+	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
+	assert.Nil(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+
+	cfg, err := config.New("0.0.0")
+	assert.Nil(t, err)
+
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+	status := newBackupStatus(cfg.Backups)
+
+	_ = retrieveUrls(cfg, m, status, true)
+	defer os.Remove(outputFilename)
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+
+	statusFamily := findMetric(families, "backuprf_backup_status")
+	require.NotNil(t, statusFamily)
+	metric := findMetricWithID(statusFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(0), metric.GetGauge().GetValue())
+
+	failedFamily := findMetric(families, "backuprf_backup_failed")
+	require.NotNil(t, failedFamily)
+	metric = findMetricWithID(failedFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(1), metric.GetCounter().GetValue())
+
+	totalFamily := findMetric(families, "backuprf_backup_nb")
+	require.NotNil(t, totalFamily)
+	assert.Equal(t, float64(1), totalFamily.GetMetric()[0].GetCounter().GetValue())
+}
+
+func TestMetricsValues_FileSizeError(t *testing.T) {
+	testutil.UseTempDir(t)
+	wantedMsg := "metrics_fserr"
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, wantedMsg)
+	}))
+	defer ts.Close()
+
+	configurationFilename, _, err := createConfigFile(wantedMsg, ts.URL)
+	assert.Nil(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configurationFilename}
+
+	cfg, err := config.New("0.0.0")
+	assert.Nil(t, err)
+
+	// Override the output path to a directory so fileSize fails
+	cfg.Backups[0].OutputFile = "."
+
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, cfg.MetricsPrefix)
+	status := newBackupStatus(cfg.Backups)
+
+	_ = retrieveUrls(cfg, m, status, true)
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+
+	statusFamily := findMetric(families, "backuprf_backup_status")
+	require.NotNil(t, statusFamily)
+	metric := findMetricWithID(statusFamily, wantedMsg)
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(0), metric.GetGauge().GetValue())
 }

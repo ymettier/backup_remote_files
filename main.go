@@ -4,6 +4,8 @@ import (
 	"backup_remote_files/config"
 	"backup_remote_files/logger"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -57,7 +59,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 			prometheus.GaugeOpts{
 				Namespace: namespace,
 				Name:      "backup_size",
-				Help:      "Status of latest backup",
+				Help:      "Size of latest backup",
 			},
 			[]string{"id"},
 		),
@@ -81,7 +83,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 			prometheus.CounterOpts{
 				Namespace: namespace,
 				Name:      "backup_nb",
-				Help:      "Number of retreivals",
+				Help:      "Number of retrievals",
 			},
 		),
 	}
@@ -94,44 +96,60 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 	return m
 }
 
-func initializeCounters(cfg config.Config, metric *metrics) {
+func initializeCounters(metric *metrics) {
 	metric.BuildInfo.With(prometheus.Labels{
 		"goarch":    runtime.GOARCH,
 		"goos":      runtime.GOOS,
 		"goversion": runtime.Version(),
 		"version":   Version,
 	}).Set(float64(1))
-
-	for _, backup := range cfg.Backups {
-		metric.BackupFailed.With(prometheus.Labels{"id": backup.ID}).Add(0)
-	}
 }
 
-func backupFile(id, url, username, password, outputFile string) (retrieveSuccess bool, err error) {
+type backupStatus struct {
+	success map[string]bool
+}
+
+func newBackupStatus(backups []config.Backup) *backupStatus {
+	s := make(map[string]bool, len(backups))
+	for _, b := range backups {
+		s[b.ID] = true
+	}
+	return &backupStatus{success: s}
+}
+
+type httpError struct{ error }
+
+func (e *httpError) Unwrap() error { return e.error }
+
+type fsError struct{ error }
+
+func (e *fsError) Unwrap() error { return e.error }
+
+func backupFile(id, url, username, password, outputFile string) error {
 	l := logger.Get()
 	req, err := http.NewRequestWithContext(context.Background(), "GET", url, http.NoBody)
 	if err != nil {
 		l.Error("Failed to create new request", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
-		return false, err
+		return &httpError{err}
 	}
 	req.SetBasicAuth(username, password)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		l.Error("Failed to read data", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
-		return false, err
+		return &httpError{err}
 	}
 	defer resp.Body.Close()
 
 	outputFileFD, err := os.Create(outputFile + ".part")
 	if err != nil {
 		l.Error("Failed to open file for writing", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
-		return true, err
+		return &fsError{err}
 	}
 	defer outputFileFD.Close()
 	if _, err = io.Copy(outputFileFD, resp.Body); err != nil {
 		l.Error("Failed to write contents to file", slog.String("id", id), slog.String("filename", outputFile))
-		return true, err
+		return &fsError{err}
 	}
 	outputFileFD.Close()
 
@@ -139,20 +157,20 @@ func backupFile(id, url, username, password, outputFile string) (retrieveSuccess
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
 		os.Remove(outputFile + ".part")
-		return false, nil
-	} else {
-		err := os.Rename(outputFile+".part", outputFile)
-		if err != nil {
-			l.Error("Failed to rename file",
-				slog.String("id", id),
-				slog.String("oldFilename", outputFile+".part"),
-				slog.String("newFilename", outputFile),
-			)
-			return true, err
-		}
-		l.Info("Successfully retrieved file", slog.String("id", id), slog.String("filename", outputFile))
+		return &httpError{errors.New("HTTP status >= 300")}
 	}
-	return true, nil
+
+	err = os.Rename(outputFile+".part", outputFile)
+	if err != nil {
+		l.Error("Failed to rename file",
+			slog.String("id", id),
+			slog.String("oldFilename", outputFile+".part"),
+			slog.String("newFilename", outputFile),
+		)
+		return &fsError{err}
+	}
+	l.Info("Successfully retrieved file", slog.String("id", id), slog.String("filename", outputFile))
+	return nil
 }
 
 func fileSize(filename string) (int64, error) {
@@ -165,7 +183,12 @@ func fileSize(filename string) (int64, error) {
 	return fi.Size(), nil
 }
 
-func retrieveUrls(cfg config.Config, metric *metrics, retrieveAll bool) (allRetrievalsSuccess bool) {
+func recordBackupFailed(metric *metrics, backupID string) {
+	metric.Status.With(prometheus.Labels{"id": backupID}).Set(float64(0))
+	metric.BackupFailed.With(prometheus.Labels{"id": backupID}).Inc()
+}
+
+func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retrieveAll bool) (allRetrievalsSuccess bool) {
 	l := logger.Get()
 	allRetrievalsSuccess = true
 	if retrieveAll {
@@ -173,30 +196,28 @@ func retrieveUrls(cfg config.Config, metric *metrics, retrieveAll bool) (allRetr
 	} else {
 		l.Info("Retrying failed retrievals")
 	}
-	for id, backup := range cfg.Backups {
-		if (!retrieveAll) && backup.RetrieveSuccess {
-			// no retrieval if not retrieving all and it last retrieval was successful
+	for _, backup := range cfg.Backups {
+		if !retrieveAll && status.success[backup.ID] {
+			// no retrieval if not retrieving all and its last retrieval was successful
 			continue
 		}
 		if !retrieveAll {
 			l.Info("Retrying...", slog.String("id", backup.ID))
 		}
-		cfg.Backups[id].RetrieveSuccess = true
-		if RetrieveSuccess, err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
-			// already logged in fileSize(); no need to log here
-			metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(0))
-			metric.BackupFailed.With(prometheus.Labels{"id": backup.ID}).Inc()
-			cfg.Backups[id].RetrieveSuccess = RetrieveSuccess
-			if !RetrieveSuccess {
+		status.success[backup.ID] = true
+		if err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
+			recordBackupFailed(metric, backup.ID)
+			var target *httpError
+			isHTTP := errors.As(err, &target)
+			status.success[backup.ID] = !isHTTP
+			if isHTTP {
 				allRetrievalsSuccess = false
 			}
 			continue
 		}
 		size, err := fileSize(backup.OutputFile)
 		if err != nil {
-			// already logged in fileSize(); no need to log here
-			metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(0))
-			metric.BackupFailed.With(prometheus.Labels{"id": backup.ID}).Inc()
+			recordBackupFailed(metric, backup.ID)
 			continue
 		}
 		metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))
@@ -212,6 +233,7 @@ func main() {
 	// Read configuration
 	cfg, err := config.New(Version)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -223,34 +245,37 @@ func main() {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
 	// Create BuildInfo metrics
-	initializeCounters(cfg, m)
+	initializeCounters(m)
+
+	// Track per-backup retrieval status separately from config
+	status := newBackupStatus(cfg.Backups)
 
 	// Create tickers for retrievals
 	ticker := time.NewTicker(cfg.Interval)
 	tickerRetry := time.NewTicker(cfg.RetryInterval)
 
 	// First return
-	if retrieveUrls(cfg, m, true) {
+	if retrieveUrls(cfg, m, status, true) {
 		tickerRetry.Stop()
 	}
 
 	// Go-routine : do backups
-	go func(cfg config.Config, m *metrics) {
+	go func(cfg config.Config, m *metrics, status *backupStatus) {
 		for {
 			select {
 			case <-ticker.C:
-				if retrieveUrls(cfg, m, true) {
+				if retrieveUrls(cfg, m, status, true) {
 					tickerRetry.Stop()
 				} else {
 					tickerRetry.Reset(cfg.RetryInterval)
 				}
 			case <-tickerRetry.C:
-				if retrieveUrls(cfg, m, false) {
+				if retrieveUrls(cfg, m, status, false) {
 					tickerRetry.Stop()
 				}
 			}
 		}
-	}(cfg, m)
+	}(cfg, m, status)
 
 	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
 
@@ -261,7 +286,7 @@ func main() {
 
 	l.Info("Starting exporter HTTP server", slog.Int("port", cfg.Port))
 	err = server.ListenAndServe()
-	if err != nil {
+	if err != nil && err != http.ErrServerClosed {
 		l.Error("Could not start exporter HTTP server", slog.Any("error", err))
 		os.Exit(1)
 	}

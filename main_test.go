@@ -423,7 +423,7 @@ func TestMetricsValues_BrokenServer(t *testing.T) {
 	assert.Equal(t, float64(1), totalFamily.GetMetric()[0].GetCounter().GetValue())
 }
 
-func TestMetricsValues_FileSizeError(t *testing.T) {
+func TestMetricsValues_RenameBlockedByDirectory(t *testing.T) {
 	testutil.UseTempDir(t)
 	wantedMsg := "metrics_fserr"
 

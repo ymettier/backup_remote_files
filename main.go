@@ -221,6 +221,9 @@ func retrieveUrls(ctx context.Context, cfg config.Config, metric *metrics,
 }
 
 func runBackupLoop(ctx context.Context, cfg config.Config, m *metrics, status *backupStatus, ticker, tickerRetry *time.Ticker) {
+	defer ticker.Stop()
+	defer tickerRetry.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():

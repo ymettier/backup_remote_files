@@ -4,12 +4,12 @@
 package main
 
 import (
-	"backup_remote_files/config"
-	"backup_remote_files/logger"
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"runtime"
@@ -20,9 +20,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	_ "embed"
-
-	"log/slog"
+	"backup_remote_files/config"
+	"backup_remote_files/logger"
 )
 
 var (

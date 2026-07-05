@@ -4,20 +4,20 @@
 package config
 
 import (
-	"backup_remote_files/logger"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime/debug"
 	"strings"
 	"time"
-
-	"log/slog"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/spf13/pflag"
+
+	"backup_remote_files/logger"
 )
 
 const defaultPort = 9289

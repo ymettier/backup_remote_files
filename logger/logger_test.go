@@ -4,7 +4,6 @@
 package logger
 
 import (
-	"backup_remote_files/testutil"
 	"context"
 	"encoding/json"
 	"io"
@@ -15,6 +14,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"backup_remote_files/testutil"
 )
 
 func resetGlobal() {

@@ -4,8 +4,6 @@
 package main
 
 import (
-	"backup_remote_files/config"
-	"backup_remote_files/testutil"
 	"context"
 	"errors"
 	"fmt"
@@ -22,6 +20,9 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"backup_remote_files/config"
+	"backup_remote_files/testutil"
 )
 
 func createConfigFile(key, url string) (configurationFilename, outputFilename string, err error) {

@@ -4,13 +4,14 @@
 package config
 
 import (
-	"backup_remote_files/testutil"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/knadh/koanf/v2"
 	"github.com/stretchr/testify/assert"
+
+	"backup_remote_files/testutil"
 )
 
 func TestVersion(t *testing.T) {

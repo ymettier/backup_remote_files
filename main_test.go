@@ -38,17 +38,17 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 	}
 	defer f.Close()
 
-	fmt.Fprintf(f, ""+
+	fmt.Fprintf(f,
 		"backups:\n"+
-		"  %s:\n"+
-		"    url: '%s'\n"+
-		"    username: ''\n"+
-		"    password: ''\n"+
-		"    outputFile: '%s'\n"+
-		"\n"+
-		"interval: '1m'\n"+
-		"retryInterval: '10s'\n"+
-		"metricsPrefix: 'backuprf'\n",
+			"  %s:\n"+
+			"    url: '%s'\n"+
+			"    username: ''\n"+
+			"    password: ''\n"+
+			"    outputFile: '%s'\n"+
+			"\n"+
+			"interval: '1m'\n"+
+			"retryInterval: '10s'\n"+
+			"metricsPrefix: 'backuprf'\n",
 		key,
 		url,
 		outputFilename,

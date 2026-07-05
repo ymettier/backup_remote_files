@@ -55,7 +55,7 @@ This is a backup remote files application written in Go. It retrieves files from
 - Group imports: stdlib first, third-party second, internal (`fileganizer/...`) last.
 - Copyright header on every `.go` file:
   ```go
-  // Copyright 2023 The Fileganizer Authors. All rights reserved.
+  // Copyright 2023 The Backup_remote_files Authors. All rights reserved.
   // SPDX-License-Identifier: MIT
   ```
 - Copyright year is always 2023-XXXX (project founding year to the present)

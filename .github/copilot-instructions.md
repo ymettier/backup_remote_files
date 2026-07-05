@@ -4,7 +4,7 @@
 This is a backup remote files application written in Go. It retrieves files from remote URLs and exports Prometheus metrics for monitoring backup status and health.
 
 ## Technology Stack
-- **Language**: Go 1.26.3+
+- **Language**: Go 1.27+
 - **Configuration**: YAML via Koanf
 - **Metrics**: Prometheus client_golang
 - **Logging**: Structured logging with slog and lumberjack

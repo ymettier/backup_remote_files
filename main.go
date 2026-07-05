@@ -125,9 +125,9 @@ type fsError struct{ error }
 
 func (e *fsError) Unwrap() error { return e.error }
 
-func backupFile(id, url, username, password, outputFile string) error {
+func backupFile(ctx context.Context, id, url, username, password, outputFile string) error {
 	l := logger.Get()
-	req, err := http.NewRequestWithContext(context.Background(), "GET", url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		l.Error("Failed to create new request", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
 		return &httpError{err}
@@ -185,7 +185,7 @@ func recordBackupFailed(metric *metrics, backupID string) {
 	metric.BackupFailed.With(prometheus.Labels{"id": backupID}).Inc()
 }
 
-func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retrieveAll bool) (allRetrievalsSuccess bool) {
+func retrieveUrls(ctx context.Context, cfg config.Config, metric *metrics, status *backupStatus, retrieveAll bool) (allRetrievalsSuccess bool) {
 	l := logger.Get()
 	allRetrievalsSuccess = true
 	if retrieveAll {
@@ -202,7 +202,7 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 			l.Info("Retrying...", slog.String("id", backup.ID))
 		}
 		status.success[backup.ID] = true
-		if err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
+		if err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
 			recordBackupFailed(metric, backup.ID)
 			var target *httpError
 			isHTTP := errors.As(err, &target)
@@ -244,7 +244,7 @@ func run(ctx context.Context) error {
 	ticker := time.NewTicker(cfg.Interval)
 	tickerRetry := time.NewTicker(cfg.RetryInterval)
 
-	if retrieveUrls(cfg, m, status, true) {
+	if retrieveUrls(ctx, cfg, m, status, true) {
 		tickerRetry.Stop()
 	}
 
@@ -254,13 +254,13 @@ func run(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if retrieveUrls(cfg, m, status, true) {
+				if retrieveUrls(ctx, cfg, m, status, true) {
 					tickerRetry.Stop()
 				} else {
 					tickerRetry.Reset(cfg.RetryInterval)
 				}
 			case <-tickerRetry.C:
-				if retrieveUrls(cfg, m, status, false) {
+				if retrieveUrls(ctx, cfg, m, status, false) {
 					tickerRetry.Stop()
 				}
 			}

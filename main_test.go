@@ -78,7 +78,7 @@ func TestRetrieveUrlsWithTargetDirCollision(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
 	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(cfg, m, status, true)
+	r := retrieveUrls(context.Background(), cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename+".part") {
 		return
 	}
@@ -109,7 +109,7 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
 	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(cfg, m, status, true)
+	r := retrieveUrls(context.Background(), cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename) {
 		return
 	}
@@ -169,7 +169,7 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 	status.success["a"] = true
 	status.success["b"] = false
 
-	r := retrieveUrls(cfg, m, status, false)
+	r := retrieveUrls(context.Background(), cfg, m, status, false)
 
 	assert.True(t, r)
 
@@ -215,7 +215,7 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
 	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(cfg, m, status, true)
+	r := retrieveUrls(context.Background(), cfg, m, status, true)
 	assert.FileExists(t, outputFilename)
 
 	assert.False(t, r)
@@ -246,7 +246,7 @@ func TestInitializeCounters(t *testing.T) {
 }
 
 func TestBackupFile_InvalidURL(t *testing.T) {
-	err := backupFile("test", "://invalid", "", "", "test.out")
+	err := backupFile(context.Background(), "test", "://invalid", "", "", "test.out")
 	assert.Error(t, err)
 
 	var target *httpError
@@ -259,7 +259,7 @@ func TestBackupFile_HTTPDoError(t *testing.T) {
 	}))
 	ts.Close()
 
-	err := backupFile("test", ts.URL, "", "", "test.out")
+	err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out")
 
 	assert.Error(t, err)
 	var target *httpError
@@ -273,7 +273,7 @@ func TestBackupFile_CreateFileError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	err := backupFile("test", ts.URL, "", "", "nonexistent_dir/file.out")
+	err := backupFile(context.Background(), "test", ts.URL, "", "", "nonexistent_dir/file.out")
 
 	assert.Error(t, err)
 	var target *fsError
@@ -290,7 +290,7 @@ func TestBackupFile_CopyError(t *testing.T) {
 	err := os.Symlink("/dev/full", "test.out.part")
 	assert.NoError(t, err)
 
-	err = backupFile("test", ts.URL, "", "", "test.out")
+	err = backupFile(context.Background(), "test", ts.URL, "", "", "test.out")
 
 	assert.Error(t, err)
 	var target *fsError
@@ -375,7 +375,7 @@ func TestMetricsValues(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 	status := newBackupStatus(cfg.Backups)
 
-	r := retrieveUrls(cfg, m, status, true)
+	r := retrieveUrls(context.Background(), cfg, m, status, true)
 	assert.True(t, r)
 	defer os.Remove(outputFilename)
 
@@ -428,7 +428,7 @@ func TestMetricsValues_BrokenServer(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 	status := newBackupStatus(cfg.Backups)
 
-	_ = retrieveUrls(cfg, m, status, true)
+	_ = retrieveUrls(context.Background(), cfg, m, status, true)
 	defer os.Remove(outputFilename)
 
 	families, err := reg.Gather()
@@ -477,7 +477,7 @@ func TestMetricsValues_FileSizeError(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 	status := newBackupStatus(cfg.Backups)
 
-	_ = retrieveUrls(cfg, m, status, true)
+	_ = retrieveUrls(context.Background(), cfg, m, status, true)
 
 	families, err := reg.Gather()
 	assert.NoError(t, err)

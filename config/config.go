@@ -222,8 +222,25 @@ func (c *Config) readConfig(filename string) error {
 		logger.Reset(&logOpts)
 		l = logger.Get()
 	}
-	// Interval
+
+	if err := c.readIntervals(k, l); err != nil {
+		return err
+	}
+
+	c.MetricsPrefix = getConfigString(k, "metricsPrefix", "backupremotefiles")
+	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
+
+	if err := c.readBackups(k, l); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Config) readIntervals(k *koanf.Koanf, l *logger.Logger) error {
 	var err error
+
+	// Interval
 	c.Interval, err = getConfigDuration(k, "interval", "24h")
 	if err != nil {
 		l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
@@ -239,30 +256,40 @@ func (c *Config) readConfig(filename string) error {
 	}
 	l.Info("Config: retryInterval", slog.String("retryInterval", c.RetryInterval.String()))
 
-	// Metrics prefix
-	c.MetricsPrefix = getConfigString(k, "metricsPrefix", "backupremotefiles")
-	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
+	return nil
+}
 
+func (c *Config) readBackups(k *koanf.Koanf, l *logger.Logger) error {
 	c.Backups = make([]Backup, 0)
-	if k.Exists("backups") {
-		for _, id := range k.MapKeys("backups") {
-			prefix := "backups." + id + "."
-			timeout, err := getConfigDuration(k, prefix+"timeout", "1m")
-			if err != nil {
-				l.Error("Failed to parse duration 'timeout' for backup", slog.String("id", id), slog.Any("error", err))
-				return err
-			}
-			b := Backup{
-				ID:         id,
-				URL:        k.String(prefix + "url"),
-				Username:   k.String(prefix + "username"),
-				Password:   k.String(prefix + "password"),
-				OutputFile: k.String(prefix + "outputFile"),
-				Timeout:    timeout,
-			}
-			c.Backups = append(c.Backups, b)
-			l.Info("Config: backup url", slog.String("url", b.URL))
+	if !k.Exists("backups") {
+		return nil
+	}
+
+	for _, id := range k.MapKeys("backups") {
+		backup, err := readBackup(k, l, id)
+		if err != nil {
+			return err
 		}
+		c.Backups = append(c.Backups, backup)
+		l.Info("Config: backup url", slog.String("url", backup.URL))
 	}
 	return nil
+}
+
+func readBackup(k *koanf.Koanf, l *logger.Logger, id string) (Backup, error) {
+	prefix := "backups." + id + "."
+	timeout, err := getConfigDuration(k, prefix+"timeout", "1m")
+	if err != nil {
+		l.Error("Failed to parse duration 'timeout' for backup", slog.String("id", id), slog.Any("error", err))
+		return Backup{}, err
+	}
+
+	return Backup{
+		ID:         id,
+		URL:        k.String(prefix + "url"),
+		Username:   k.String(prefix + "username"),
+		Password:   k.String(prefix + "password"),
+		OutputFile: k.String(prefix + "outputFile"),
+		Timeout:    timeout,
+	}, nil
 }

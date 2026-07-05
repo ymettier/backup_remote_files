@@ -1,12 +1,17 @@
+// Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 package main
 
 import (
-	"backup_remote_files/config"
-	"backup_remote_files/logger"
 	"context"
+	_ "embed"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
+	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -17,9 +22,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	_ "embed"
-
-	"log/slog"
+	"backup_remote_files/config"
+	"backup_remote_files/logger"
 )
 
 var (
@@ -125,39 +129,54 @@ type fsError struct{ error }
 
 func (e *fsError) Unwrap() error { return e.error }
 
-func backupFile(id, url, username, password, outputFile string) error {
+func backupFile(ctx context.Context, id, url, username, password, outputFile string, timeout time.Duration) (int64, error) {
 	l := logger.Get()
-	req, err := http.NewRequestWithContext(context.Background(), "GET", url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		l.Error("Failed to create new request", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
-		return &httpError{err}
+		return 0, &httpError{err}
 	}
 	req.SetBasicAuth(username, password)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			TLSHandshakeTimeout:   timeout,
+			ResponseHeaderTimeout: timeout,
+		},
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		l.Error("Failed to read data", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
-		return &httpError{err}
+		return 0, &httpError{err}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			l.Error("Failed to close response body", slog.String("id", id), slog.Any("error", err))
+		}
+	}()
+
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
+		return 0, &httpError{errors.New("HTTP status >= 300")}
+	}
 
 	outputFileFD, err := os.Create(outputFile + ".part")
 	if err != nil {
 		l.Error("Failed to open file for writing", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
-		return &fsError{err}
+		return 0, &fsError{err}
 	}
-	defer outputFileFD.Close()
-	if _, err = io.Copy(outputFileFD, resp.Body); err != nil {
+	defer func() {
+		if err := outputFileFD.Close(); err != nil {
+			l.Error("Failed to close output file", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
+		}
+	}()
+	written, err := io.Copy(outputFileFD, resp.Body)
+	if err != nil {
 		l.Error("Failed to write contents to file", slog.String("id", id), slog.String("filename", outputFile))
-		return &fsError{err}
-	}
-	outputFileFD.Close()
-
-	// code 300 is http.StatusMultipleChoices
-	if resp.StatusCode >= http.StatusMultipleChoices {
-		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
-		os.Remove(outputFile + ".part")
-		return &httpError{errors.New("HTTP status >= 300")}
+		return 0, &fsError{err}
 	}
 
 	err = os.Rename(outputFile+".part", outputFile)
@@ -167,20 +186,10 @@ func backupFile(id, url, username, password, outputFile string) error {
 			slog.String("oldFilename", outputFile+".part"),
 			slog.String("newFilename", outputFile),
 		)
-		return &fsError{err}
+		return 0, &fsError{err}
 	}
 	l.Info("Successfully retrieved file", slog.String("id", id), slog.String("filename", outputFile))
-	return nil
-}
-
-func fileSize(filename string) (int64, error) {
-	l := logger.Get()
-	fi, err := os.Stat(filename)
-	if err != nil {
-		l.Error("Failed to get file stats", slog.String("filename", filename), slog.Any("error", err))
-		return 0, err
-	}
-	return fi.Size(), nil
+	return written, nil
 }
 
 func recordBackupFailed(metric *metrics, backupID string) {
@@ -188,7 +197,24 @@ func recordBackupFailed(metric *metrics, backupID string) {
 	metric.BackupFailed.With(prometheus.Labels{"id": backupID}).Inc()
 }
 
-func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retrieveAll bool) (allRetrievalsSuccess bool) {
+func processBackup(ctx context.Context, backup *config.Backup, metric *metrics, status *backupStatus) (isHTTPError bool) {
+	status.success[backup.ID] = true
+	size, err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile, backup.Timeout)
+	if err != nil {
+		recordBackupFailed(metric, backup.ID)
+		var target *httpError
+		isHTTP := errors.As(err, &target)
+		status.success[backup.ID] = !isHTTP
+		return isHTTP
+	}
+	metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))
+	metric.Size.With(prometheus.Labels{"id": backup.ID}).Set(float64(size))
+	metric.Time.With(prometheus.Labels{"id": backup.ID}).Set(float64(time.Now().Unix()))
+	return false
+}
+
+func retrieveUrls(ctx context.Context, cfg config.Config, metric *metrics,
+	status *backupStatus, retrieveAll bool) (allRetrievalsSuccess bool) {
 	l := logger.Get()
 	allRetrievalsSuccess = true
 	if retrieveAll {
@@ -198,96 +224,103 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 	}
 	for _, backup := range cfg.Backups {
 		if !retrieveAll && status.success[backup.ID] {
-			// no retrieval if not retrieving all and its last retrieval was successful
 			continue
 		}
 		if !retrieveAll {
 			l.Info("Retrying...", slog.String("id", backup.ID))
 		}
-		status.success[backup.ID] = true
-		if err := backupFile(backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
-			recordBackupFailed(metric, backup.ID)
-			var target *httpError
-			isHTTP := errors.As(err, &target)
-			status.success[backup.ID] = !isHTTP
-			if isHTTP {
-				allRetrievalsSuccess = false
-			}
-			continue
+		if processBackup(ctx, &backup, metric, status) {
+			allRetrievalsSuccess = false
 		}
-		size, err := fileSize(backup.OutputFile)
-		if err != nil {
-			recordBackupFailed(metric, backup.ID)
-			continue
-		}
-		metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))
-		metric.Size.With(prometheus.Labels{"id": backup.ID}).Set(float64(size))
-		metric.Time.With(prometheus.Labels{"id": backup.ID}).Set(float64(time.Now().Unix()))
 	}
 	metric.BackupTotal.Inc()
 	l.Info("End of retrieving files to backup")
 	return allRetrievalsSuccess
 }
 
-func main() {
-	// Read configuration
-	cfg, err := config.New(Version)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+func runBackupLoop(ctx context.Context, cfg config.Config, m *metrics, status *backupStatus, ticker, tickerRetry *time.Ticker) {
+	defer ticker.Stop()
+	defer tickerRetry.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if retrieveUrls(ctx, cfg, m, status, true) {
+				tickerRetry.Stop()
+			} else {
+				tickerRetry.Reset(cfg.RetryInterval)
+			}
+		case <-tickerRetry.C:
+			if retrieveUrls(ctx, cfg, m, status, false) {
+				tickerRetry.Stop()
+			}
+		}
+	}
+}
+
+func startMetricsServer(ctx context.Context, reg *prometheus.Registry, port int) error {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
+
+	server := &http.Server{
+		Addr:              ":" + strconv.Itoa(port),
+		ReadHeaderTimeout: 3 * time.Second,
+		Handler:           mux,
 	}
 
-	l := logger.Get()
+	go func() { //nolint:gosec
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:mnd
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
 
-	// Create a non-global registry.
+	l := logger.Get()
+	l.Info("Starting exporter HTTP server", slog.Int("port", port))
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		l.Error("Could not start exporter HTTP server", slog.Any("error", err))
+		return err
+	}
+
+	return nil
+}
+
+func run(ctx context.Context) error {
+	flags, err := config.ParseFlags(Version, os.Args[1:])
+	if err != nil {
+		return err
+	}
+	cfg, err := config.New(flags.ConfigFile, flags.Port)
+	if err != nil {
+		return err
+	}
+
 	reg := prometheus.NewRegistry()
-	// Create new metrics and register them using the custom registry.
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Create BuildInfo metrics
 	initializeCounters(m)
 
-	// Track per-backup retrieval status separately from config
 	status := newBackupStatus(cfg.Backups)
 
-	// Create tickers for retrievals
 	ticker := time.NewTicker(cfg.Interval)
 	tickerRetry := time.NewTicker(cfg.RetryInterval)
 
-	// First return
-	if retrieveUrls(cfg, m, status, true) {
+	if retrieveUrls(ctx, cfg, m, status, true) {
 		tickerRetry.Stop()
 	}
 
-	// Go-routine : do backups
-	go func(cfg config.Config, m *metrics, status *backupStatus) {
-		for {
-			select {
-			case <-ticker.C:
-				if retrieveUrls(cfg, m, status, true) {
-					tickerRetry.Stop()
-				} else {
-					tickerRetry.Reset(cfg.RetryInterval)
-				}
-			case <-tickerRetry.C:
-				if retrieveUrls(cfg, m, status, false) {
-					tickerRetry.Stop()
-				}
-			}
+	go runBackupLoop(ctx, cfg, m, status, ticker, tickerRetry)
+
+	return startMetricsServer(ctx, reg, cfg.Port)
+}
+
+func main() {
+	if err := run(context.Background()); err != nil {
+		if !errors.Is(err, flag.ErrHelp) {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
 		}
-	}(cfg, m, status)
-
-	http.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{Registry: reg}))
-
-	server := &http.Server{
-		Addr:              ":" + strconv.Itoa(cfg.Port),
-		ReadHeaderTimeout: 3 * time.Second,
-	}
-
-	l.Info("Starting exporter HTTP server", slog.Int("port", cfg.Port))
-	err = server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		l.Error("Could not start exporter HTTP server", slog.Any("error", err))
-		os.Exit(1)
 	}
 }

@@ -1,3 +1,6 @@
+// Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 package logger
 
 import (
@@ -77,7 +80,7 @@ func newLogger(opts *LogOptions) *Logger {
 	if opts != nil && opts.Level != "" {
 		levelStr = opts.Level
 	} else {
-		levelStr = os.Getenv("LOG_LEVEL")
+		levelStr = os.Getenv("BRF_LOG_LEVEL")
 	}
 
 	if levelStr != "" {

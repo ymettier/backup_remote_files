@@ -55,10 +55,10 @@ This is a backup remote files application written in Go. It retrieves files from
 - Group imports: stdlib first, third-party second, internal (`fileganizer/...`) last.
 - Copyright header on every `.go` file:
   ```go
-  // Copyright 2023 The Fileganizer Authors. All rights reserved.
+  // Copyright 2023 The Backup_remote_files Authors. All rights reserved.
   // SPDX-License-Identifier: MIT
   ```
-- Copyright year is always 2023-XXXX (project founding year to the present)
+- Copyright year is always 20XX-20YY or just 20XX if 20XX and 20YY are the same. 20XX is the project founding year. It can be retrieved from the `git log` command. 20YY is the current year.
 - All source file should have a copyright header (the syntax depends on the file type). For non-go files, use the appropriate comment syntax (e.g., `//` for `.txt`, `/*` for `.md`) and set a header similar to the `.go` files.
 
 ### Linting

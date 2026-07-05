@@ -1,3 +1,6 @@
+// Copyright 2026 The Backup_remote_files Authors. All rights reserved.
+// SPDX-License-Identifier: MIT
+
 package testutil
 
 import (

@@ -1,28 +1,28 @@
-// Copyright 2024 The Backup_remote_files Authors. All rights reserved.
+// Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved.
 // SPDX-License-Identifier: MIT
 
 package config
 
 import (
-	"backup_remote_files/logger"
+	"flag"
 	"fmt"
-	"os"
+	"log/slog"
 	"runtime/debug"
 	"strings"
 	"time"
-
-	"log/slog"
 
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 	"github.com/spf13/pflag"
+
+	"backup_remote_files/logger"
 )
 
 const defaultPort = 9289
 
-func printVersion(version string) string {
+func versionInfo(version string) string {
 	output := fmt.Sprintf("%-15s: %s\n", "Version", version)
 
 	// Get and print additionnal build info
@@ -61,7 +61,7 @@ type CLIFlags struct {
 	Port       int
 }
 
-func parseFlags(version string) CLIFlags {
+func ParseFlags(version string, args []string) (CLIFlags, error) {
 	fs := pflag.NewFlagSet("backup_remote_files", pflag.ContinueOnError)
 
 	configFile := fs.StringP("config", "c", "", "Configuration file (required)")
@@ -69,31 +69,29 @@ func parseFlags(version string) CLIFlags {
 	showVersion := fs.BoolP("version", "V", false, "Show version info")
 	showHelp := fs.BoolP("help", "h", false, "Print help")
 
-	if err := fs.Parse(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
-		os.Exit(1)
+	if err := fs.Parse(args); err != nil {
+		return CLIFlags{}, err
 	}
 
 	if *showHelp {
 		fs.PrintDefaults()
-		os.Exit(0)
+		return CLIFlags{}, flag.ErrHelp
 	}
 
 	if *showVersion {
-		output := printVersion(version)
-		fmt.Printf("%s", output)
-		os.Exit(0)
+		output := versionInfo(version)
+		fmt.Print(output)
+		return CLIFlags{}, flag.ErrHelp
 	}
 
 	if *configFile == "" {
-		fmt.Fprintf(os.Stderr, "Error: -c/--config is required\n")
-		os.Exit(1)
+		return CLIFlags{}, fmt.Errorf("-c/--config is required")
 	}
 
 	return CLIFlags{
 		ConfigFile: *configFile,
 		Port:       *port,
-	}
+	}, nil
 }
 
 type Backup struct {
@@ -102,6 +100,7 @@ type Backup struct {
 	Username   string
 	Password   string
 	OutputFile string
+	Timeout    time.Duration
 }
 
 type Config struct {
@@ -112,12 +111,11 @@ type Config struct {
 	MetricsPrefix string
 }
 
-func New(version string) (Config, error) {
-	flags := parseFlags(version)
+func New(configFile string, port int) (Config, error) {
 	var cfg Config
-	cfg.Port = flags.Port
+	cfg.Port = port
 
-	err := cfg.readConfig(flags.ConfigFile)
+	err := cfg.readConfig(configFile)
 	if err != nil {
 		return cfg, err
 	}
@@ -140,14 +138,14 @@ func lookupConfigKey(k *koanf.Koanf, camelKey string) (string, bool) {
 	return "", false
 }
 
-func (c *Config) getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
+func getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
 	if val, ok := lookupConfigKey(k, camelKey); ok {
 		return val
 	}
 	return defaultValue
 }
 
-func (c *Config) getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
+func getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
 	durationStr := defaultDuration
 	if val, ok := lookupConfigKey(k, camelKey); ok {
 		durationStr = val
@@ -224,9 +222,26 @@ func (c *Config) readConfig(filename string) error {
 		logger.Reset(&logOpts)
 		l = logger.Get()
 	}
-	// Interval
+
+	if err := c.readIntervals(k, l); err != nil {
+		return err
+	}
+
+	c.MetricsPrefix = getConfigString(k, "metricsPrefix", "backupremotefiles")
+	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
+
+	if err := c.readBackups(k, l); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Config) readIntervals(k *koanf.Koanf, l *logger.Logger) error {
 	var err error
-	c.Interval, err = c.getConfigDuration(k, "interval", "24h")
+
+	// Interval
+	c.Interval, err = getConfigDuration(k, "interval", "24h")
 	if err != nil {
 		l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
 		return err
@@ -234,31 +249,47 @@ func (c *Config) readConfig(filename string) error {
 	l.Info("Config: interval", slog.String("interval", c.Interval.String()))
 
 	// RetryInterval
-	c.RetryInterval, err = c.getConfigDuration(k, "retryInterval", "1d")
+	c.RetryInterval, err = getConfigDuration(k, "retryInterval", "24h")
 	if err != nil {
 		l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
 		return err
 	}
 	l.Info("Config: retryInterval", slog.String("retryInterval", c.RetryInterval.String()))
 
-	// Metrics prefix
-	c.MetricsPrefix = c.getConfigString(k, "metricsPrefix", "backupremotefiles")
-	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
+	return nil
+}
 
+func (c *Config) readBackups(k *koanf.Koanf, l *logger.Logger) error {
 	c.Backups = make([]Backup, 0)
-	if k.Exists("backups") {
-		for _, id := range k.MapKeys("backups") {
-			prefix := "backups." + id + "."
-			b := Backup{
-				ID:         id,
-				URL:        k.String(prefix + "url"),
-				Username:   k.String(prefix + "username"),
-				Password:   k.String(prefix + "password"),
-				OutputFile: k.String(prefix + "outputFile"),
-			}
-			c.Backups = append(c.Backups, b)
-			l.Info("Config: backup url", slog.String("url", b.URL))
+	if !k.Exists("backups") {
+		return nil
+	}
+
+	for _, id := range k.MapKeys("backups") {
+		backup, err := readBackup(k, l, id)
+		if err != nil {
+			return err
 		}
+		c.Backups = append(c.Backups, backup)
+		l.Info("Config: backup url", slog.String("url", backup.URL))
 	}
 	return nil
+}
+
+func readBackup(k *koanf.Koanf, l *logger.Logger, id string) (Backup, error) {
+	prefix := "backups." + id + "."
+	timeout, err := getConfigDuration(k, prefix+"timeout", "1m")
+	if err != nil {
+		l.Error("Failed to parse duration 'timeout' for backup", slog.String("id", id), slog.Any("error", err))
+		return Backup{}, err
+	}
+
+	return Backup{
+		ID:         id,
+		URL:        k.String(prefix + "url"),
+		Username:   k.String(prefix + "username"),
+		Password:   k.String(prefix + "password"),
+		OutputFile: k.String(prefix + "outputFile"),
+		Timeout:    timeout,
+	}, nil
 }

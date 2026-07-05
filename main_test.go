@@ -249,6 +249,85 @@ func TestBackupFile_InvalidURL(t *testing.T) {
 	assert.True(t, errors.As(err, &target))
 }
 
+func TestBackupFile_HTTPDoError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "test")
+	}))
+	ts.Close()
+
+	err := backupFile("test", ts.URL, "", "", "test.out")
+
+	assert.Error(t, err)
+	var target *httpError
+	assert.True(t, errors.As(err, &target))
+}
+
+func TestBackupFile_CreateFileError(t *testing.T) {
+	testutil.UseTempDir(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "test")
+	}))
+	defer ts.Close()
+
+	err := backupFile("test", ts.URL, "", "", "nonexistent_dir/file.out")
+
+	assert.Error(t, err)
+	var target *fsError
+	assert.True(t, errors.As(err, &target))
+}
+
+func TestBackupFile_CopyError(t *testing.T) {
+	testutil.UseTempDir(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, "test")
+	}))
+	defer ts.Close()
+
+	err := os.Symlink("/dev/full", "test.out.part")
+	assert.NoError(t, err)
+
+	err = backupFile("test", ts.URL, "", "", "test.out")
+
+	assert.Error(t, err)
+	var target *fsError
+	assert.True(t, errors.As(err, &target))
+}
+
+func TestHTTPError_Unwrap(t *testing.T) {
+	inner := errors.New("inner")
+	err := &httpError{inner}
+	assert.Equal(t, inner, errors.Unwrap(err))
+}
+
+func TestFSError_Unwrap(t *testing.T) {
+	inner := errors.New("inner")
+	err := &fsError{inner}
+	assert.Equal(t, inner, errors.Unwrap(err))
+}
+
+func TestRecordBackupFailed(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	m := NewMetrics(reg, "test")
+	initializeCounters(m)
+
+	recordBackupFailed(m, "test_id")
+
+	families, err := reg.Gather()
+	assert.NoError(t, err)
+
+	failedFamily := findMetric(families, "test_backup_failed")
+	require.NotNil(t, failedFamily)
+	metric := findMetricWithID(failedFamily, "test_id")
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(1), metric.GetCounter().GetValue())
+
+	statusFamily := findMetric(families, "test_backup_status")
+	require.NotNil(t, statusFamily)
+	metric = findMetricWithID(statusFamily, "test_id")
+	require.NotNil(t, metric)
+	assert.Equal(t, float64(0), metric.GetGauge().GetValue())
+}
+
 func findMetric(families []*dto.MetricFamily, name string) *dto.MetricFamily {
 	for _, f := range families {
 		if f.GetName() == name {

@@ -224,7 +224,7 @@ func TestInitializeCounters(t *testing.T) {
 }
 
 func TestBackupFile_InvalidURL(t *testing.T) {
-	_, err := backupFile(context.Background(), "test", "://invalid", "", "", "test.out")
+	_, err := backupFile(context.Background(), "test", "://invalid", "", "", "test.out", 10*time.Second)
 	assert.Error(t, err)
 
 	var target *httpError
@@ -237,7 +237,7 @@ func TestBackupFile_HTTPDoError(t *testing.T) {
 	}))
 	ts.Close()
 
-	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out")
+	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out", 10*time.Second)
 
 	assert.Error(t, err)
 	var target *httpError
@@ -251,7 +251,7 @@ func TestBackupFile_CreateFileError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "nonexistent_dir/file.out")
+	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "nonexistent_dir/file.out", 10*time.Second)
 
 	assert.Error(t, err)
 	var target *fsError
@@ -268,7 +268,7 @@ func TestBackupFile_CopyError(t *testing.T) {
 	err := os.Symlink("/dev/full", "test.out.part")
 	assert.NoError(t, err)
 
-	_, err = backupFile(context.Background(), "test", ts.URL, "", "", "test.out")
+	_, err = backupFile(context.Background(), "test", ts.URL, "", "", "test.out", 10*time.Second)
 
 	assert.Error(t, err)
 	var target *fsError

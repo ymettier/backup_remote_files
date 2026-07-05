@@ -12,6 +12,8 @@ backups:
     username: ""
     password: ""
     outputFile: "outputfile"
+    # Optional timeout for the backup request. Default is 1m
+    timeout: "10m"
 
 interval: "2h"
 retryInterval: "10m"

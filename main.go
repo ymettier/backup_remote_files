@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -128,7 +129,7 @@ type fsError struct{ error }
 
 func (e *fsError) Unwrap() error { return e.error }
 
-func backupFile(ctx context.Context, id, url, username, password, outputFile string) (int64, error) {
+func backupFile(ctx context.Context, id, url, username, password, outputFile string, timeout time.Duration) (int64, error) {
 	l := logger.Get()
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
@@ -137,7 +138,16 @@ func backupFile(ctx context.Context, id, url, username, password, outputFile str
 	}
 	req.SetBasicAuth(username, password)
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			TLSHandshakeTimeout:   timeout,
+			ResponseHeaderTimeout: timeout,
+		},
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		l.Error("Failed to read data", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
 		return 0, &httpError{err}
@@ -189,7 +199,7 @@ func recordBackupFailed(metric *metrics, backupID string) {
 
 func processBackup(ctx context.Context, backup *config.Backup, metric *metrics, status *backupStatus) (isHTTPError bool) {
 	status.success[backup.ID] = true
-	size, err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile)
+	size, err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile, backup.Timeout)
 	if err != nil {
 		recordBackupFailed(metric, backup.ID)
 		var target *httpError

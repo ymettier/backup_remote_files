@@ -100,6 +100,7 @@ type Backup struct {
 	Username   string
 	Password   string
 	OutputFile string
+	Timeout    time.Duration
 }
 
 type Config struct {
@@ -246,12 +247,18 @@ func (c *Config) readConfig(filename string) error {
 	if k.Exists("backups") {
 		for _, id := range k.MapKeys("backups") {
 			prefix := "backups." + id + "."
+			timeout, err := getConfigDuration(k, prefix+"timeout", "1m")
+			if err != nil {
+				l.Error("Failed to parse duration 'timeout' for backup", slog.String("id", id), slog.Any("error", err))
+				return err
+			}
 			b := Backup{
 				ID:         id,
 				URL:        k.String(prefix + "url"),
 				Username:   k.String(prefix + "username"),
 				Password:   k.String(prefix + "password"),
 				OutputFile: k.String(prefix + "outputFile"),
+				Timeout:    timeout,
 			}
 			c.Backups = append(c.Backups, b)
 			l.Info("Config: backup url", slog.String("url", b.URL))

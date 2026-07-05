@@ -275,6 +275,38 @@ func TestBackupFile_CopyError(t *testing.T) {
 	assert.True(t, errors.As(err, &target))
 }
 
+func TestBackupFile_TimeoutExceeded(t *testing.T) {
+	testutil.UseTempDir(t)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(500 * time.Millisecond)
+		fmt.Fprintln(w, "test")
+	}))
+	defer ts.Close()
+
+	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out", 100*time.Millisecond)
+
+	assert.Error(t, err)
+	var target *httpError
+	assert.True(t, errors.As(err, &target))
+}
+
+func TestBackupFile_SuccessfulBackup(t *testing.T) {
+	testutil.UseTempDir(t)
+	testContent := "Hello, World!"
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, testContent)
+	}))
+	defer ts.Close()
+
+	size, err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out", 10*time.Second)
+
+	assert.NoError(t, err)
+	assert.Equal(t, int64(len(testContent)), size)
+	content, err := os.ReadFile("test.out")
+	assert.NoError(t, err)
+	assert.Equal(t, testContent, string(content))
+}
+
 func TestHTTPError_Unwrap(t *testing.T) {
 	inner := errors.New("inner")
 	err := &httpError{inner}

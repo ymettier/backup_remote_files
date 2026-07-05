@@ -22,7 +22,7 @@ import (
 
 const defaultPort = 9289
 
-func printVersion(version string) string {
+func versionInfo(version string) string {
 	output := fmt.Sprintf("%-15s: %s\n", "Version", version)
 
 	// Get and print additionnal build info
@@ -79,7 +79,7 @@ func ParseFlags(version string, args []string) (CLIFlags, error) {
 	}
 
 	if *showVersion {
-		output := printVersion(version)
+		output := versionInfo(version)
 		fmt.Print(output)
 		return CLIFlags{}, flag.ErrHelp
 	}

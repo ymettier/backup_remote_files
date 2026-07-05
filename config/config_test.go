@@ -16,7 +16,7 @@ import (
 
 func TestVersion(t *testing.T) {
 	wantedVersion := "1.2.3"
-	output := printVersion(wantedVersion)
+	output := versionInfo(wantedVersion)
 	s := strings.Split(output, "\n")
 	assert.Equal(t, "Version        : "+wantedVersion, s[0], "Printing version")
 }

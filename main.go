@@ -142,7 +142,11 @@ func backupFile(ctx context.Context, id, url, username, password, outputFile str
 		l.Error("Failed to read data", slog.String("id", id), slog.String("url", url), slog.Any("error", err))
 		return 0, &httpError{err}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			l.Error("Failed to close response body", slog.String("id", id), slog.Any("error", err))
+		}
+	}()
 
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		l.Error("Request returned HTTP status code >= 300", slog.String("id", id), slog.String("url", url), slog.Int("status", resp.StatusCode))
@@ -154,7 +158,11 @@ func backupFile(ctx context.Context, id, url, username, password, outputFile str
 		l.Error("Failed to open file for writing", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
 		return 0, &fsError{err}
 	}
-	defer outputFileFD.Close()
+	defer func() {
+		if err := outputFileFD.Close(); err != nil {
+			l.Error("Failed to close output file", slog.String("id", id), slog.String("filename", outputFile), slog.Any("error", err))
+		}
+	}()
 	written, err := io.Copy(outputFileFD, resp.Body)
 	if err != nil {
 		l.Error("Failed to write contents to file", slog.String("id", id), slog.String("filename", outputFile))

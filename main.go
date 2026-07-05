@@ -174,16 +174,6 @@ func backupFile(ctx context.Context, id, url, username, password, outputFile str
 	return written, nil
 }
 
-func fileSize(filename string) (int64, error) {
-	l := logger.Get()
-	fi, err := os.Stat(filename)
-	if err != nil {
-		l.Error("Failed to get file stats", slog.String("filename", filename), slog.Any("error", err))
-		return 0, err
-	}
-	return fi.Size(), nil
-}
-
 func recordBackupFailed(metric *metrics, backupID string) {
 	metric.Status.With(prometheus.Labels{"id": backupID}).Set(float64(0))
 	metric.BackupFailed.With(prometheus.Labels{"id": backupID}).Inc()

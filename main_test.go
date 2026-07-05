@@ -215,11 +215,6 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	assert.Equal(t, string(byteValue), oldMsg)
 }
 
-func TestFileSize_NotFound(t *testing.T) {
-	_, err := fileSize("nonexistent_file")
-	assert.Error(t, err)
-}
-
 func TestInitializeCounters(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg, "test")
@@ -443,7 +438,7 @@ func TestMetricsValues_FileSizeError(t *testing.T) {
 	cfg, err := config.New(configurationFilename, 9289)
 	assert.Nil(t, err)
 
-	// Override the output path to a directory so fileSize fails
+	// Override the output path to a directory so rename fails
 	cfg.Backups[0].OutputFile = "."
 
 	reg := prometheus.NewRegistry()
@@ -539,15 +534,6 @@ func TestRun_ServesMetrics(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("run() did not return after cancellation")
 	}
-}
-
-func TestFileSize_Success(t *testing.T) {
-	testutil.UseTempDir(t)
-	err := os.WriteFile("test.txt", []byte("hello"), 0600)
-	require.NoError(t, err)
-	size, err := fileSize("test.txt")
-	assert.NoError(t, err)
-	assert.Equal(t, int64(5), size)
 }
 
 func TestRun_ParseFlagsError(t *testing.T) {

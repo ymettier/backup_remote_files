@@ -7,6 +7,7 @@ import (
 	"context"
 	_ "embed"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -230,7 +231,10 @@ func retrieveUrls(ctx context.Context, cfg config.Config, metric *metrics,
 }
 
 func run(ctx context.Context) error {
-	flags := config.ParseFlags(Version, os.Args[1:])
+	flags, err := config.ParseFlags(Version, os.Args[1:])
+	if err != nil {
+		return err
+	}
 	cfg, err := config.New(flags.ConfigFile, flags.Port)
 	if err != nil {
 		return err
@@ -296,7 +300,9 @@ func run(ctx context.Context) error {
 
 func main() {
 	if err := run(context.Background()); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		if !errors.Is(err, flag.ErrHelp) {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }

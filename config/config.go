@@ -4,9 +4,9 @@
 package config
 
 import (
+	"flag"
 	"fmt"
 	"log/slog"
-	"os"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -61,7 +61,7 @@ type CLIFlags struct {
 	Port       int
 }
 
-func ParseFlags(version string, args []string) CLIFlags {
+func ParseFlags(version string, args []string) (CLIFlags, error) {
 	fs := pflag.NewFlagSet("backup_remote_files", pflag.ContinueOnError)
 
 	configFile := fs.StringP("config", "c", "", "Configuration file (required)")
@@ -70,30 +70,28 @@ func ParseFlags(version string, args []string) CLIFlags {
 	showHelp := fs.BoolP("help", "h", false, "Print help")
 
 	if err := fs.Parse(args); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
-		os.Exit(1)
+		return CLIFlags{}, err
 	}
 
 	if *showHelp {
 		fs.PrintDefaults()
-		os.Exit(0)
+		return CLIFlags{}, flag.ErrHelp
 	}
 
 	if *showVersion {
 		output := printVersion(version)
-		fmt.Printf("%s", output)
-		os.Exit(0)
+		fmt.Print(output)
+		return CLIFlags{}, flag.ErrHelp
 	}
 
 	if *configFile == "" {
-		fmt.Fprintf(os.Stderr, "Error: -c/--config is required\n")
-		os.Exit(1)
+		return CLIFlags{}, fmt.Errorf("-c/--config is required")
 	}
 
 	return CLIFlags{
 		ConfigFile: *configFile,
 		Port:       *port,
-	}
+	}, nil
 }
 
 type Backup struct {

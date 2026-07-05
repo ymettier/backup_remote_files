@@ -188,7 +188,7 @@ func recordBackupFailed(metric *metrics, backupID string) {
 	metric.BackupFailed.With(prometheus.Labels{"id": backupID}).Inc()
 }
 
-func processBackup(ctx context.Context, backup config.Backup, metric *metrics, status *backupStatus) (isHTTPError bool) {
+func processBackup(ctx context.Context, backup *config.Backup, metric *metrics, status *backupStatus) (isHTTPError bool) {
 	status.success[backup.ID] = true
 	if err := backupFile(ctx, backup.ID, backup.URL, backup.Username, backup.Password, backup.OutputFile); err != nil {
 		recordBackupFailed(metric, backup.ID)
@@ -224,7 +224,7 @@ func retrieveUrls(ctx context.Context, cfg config.Config, metric *metrics,
 		if !retrieveAll {
 			l.Info("Retrying...", slog.String("id", backup.ID))
 		}
-		if processBackup(ctx, backup, metric, status) {
+		if processBackup(ctx, &backup, metric, status) {
 			allRetrievalsSuccess = false
 		}
 	}

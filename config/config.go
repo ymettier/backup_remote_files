@@ -231,7 +231,7 @@ func (c *Config) readConfig(filename string) error {
 	l.Info("Config: interval", slog.String("interval", c.Interval.String()))
 
 	// RetryInterval
-	c.RetryInterval, err = getConfigDuration(k, "retryInterval", "1d")
+	c.RetryInterval, err = getConfigDuration(k, "retryInterval", "24h")
 	if err != nil {
 		l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
 		return err

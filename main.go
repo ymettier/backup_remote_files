@@ -229,37 +229,28 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 	return allRetrievalsSuccess
 }
 
-func main() {
-	// Read configuration
+func run() error {
 	cfg, err := config.New(Version)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 
 	l := logger.Get()
 
-	// Create a non-global registry.
 	reg := prometheus.NewRegistry()
-	// Create new metrics and register them using the custom registry.
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
-	// Create BuildInfo metrics
 	initializeCounters(m)
 
-	// Track per-backup retrieval status separately from config
 	status := newBackupStatus(cfg.Backups)
 
-	// Create tickers for retrievals
 	ticker := time.NewTicker(cfg.Interval)
 	tickerRetry := time.NewTicker(cfg.RetryInterval)
 
-	// First return
 	if retrieveUrls(cfg, m, status, true) {
 		tickerRetry.Stop()
 	}
 
-	// Go-routine : do backups
 	go func(cfg config.Config, m *metrics, status *backupStatus) {
 		for {
 			select {
@@ -285,9 +276,17 @@ func main() {
 	}
 
 	l.Info("Starting exporter HTTP server", slog.Int("port", cfg.Port))
-	err = server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		l.Error("Could not start exporter HTTP server", slog.Any("error", err))
+		return err
+	}
+
+	return nil
+}
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }

@@ -6,13 +6,17 @@ package main
 import (
 	"backup_remote_files/config"
 	"backup_remote_files/testutil"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -483,4 +487,94 @@ func TestMetricsValues_FileSizeError(t *testing.T) {
 	metric := findMetricWithID(statusFamily, wantedMsg)
 	require.NotNil(t, metric)
 	assert.Equal(t, float64(0), metric.GetGauge().GetValue())
+}
+
+func getFreePort(t *testing.T) int {
+	t.Helper()
+	lc := net.ListenConfig{}
+	l, err := lc.Listen(context.Background(), "tcp", ":0")
+	require.NoError(t, err)
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+func TestRun_ServesMetrics(t *testing.T) {
+	testutil.UseTempDir(t)
+	wantedMsg := "run_metrics"
+	port := getFreePort(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintln(w, wantedMsg)
+	}))
+	defer ts.Close()
+
+	configContent := fmt.Sprintf(
+		"backups:\n"+
+			"  %s:\n"+
+			"    url: '%s'\n"+
+			"    username: ''\n"+
+			"    password: ''\n"+
+			"    outputFile: '%s'\n"+
+			"\n"+
+			"interval: '1m'\n"+
+			"retryInterval: '10s'\n"+
+			"metricsPrefix: 'run_test'\n",
+		wantedMsg, ts.URL, wantedMsg+".out",
+	)
+	configFile := "run_config.yaml"
+	err := os.WriteFile(configFile, []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", configFile, "-p", strconv.Itoa(port)}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- run(ctx)
+	}()
+
+	var resp *http.Response
+	client := &http.Client{}
+	for range 20 {
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://localhost:%d/metrics", port), http.NoBody)
+		if reqErr != nil {
+			err = reqErr
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		resp, err = client.Do(req)
+		if err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Contains(t, string(body), "run_test_backup_status")
+
+	cancel()
+	select {
+	case <-errCh:
+	case <-time.After(5 * time.Second):
+		t.Fatal("run() did not return after cancellation")
+	}
+}
+
+func TestRun_ConfigError(t *testing.T) {
+	testutil.UseTempDir(t)
+
+	oldArgs := os.Args
+	defer func() { os.Args = oldArgs }()
+	os.Args = []string{"./backup_remote_files", "-c", "nonexistent.yaml"}
+
+	err := run(context.Background())
+	assert.Error(t, err)
 }

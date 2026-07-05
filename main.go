@@ -229,7 +229,7 @@ func retrieveUrls(cfg config.Config, metric *metrics, status *backupStatus, retr
 	return allRetrievalsSuccess
 }
 
-func run() error {
+func run(ctx context.Context) error {
 	cfg, err := config.New(Version)
 	if err != nil {
 		return err
@@ -254,6 +254,8 @@ func run() error {
 	go func(cfg config.Config, m *metrics, status *backupStatus) {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-ticker.C:
 				if retrieveUrls(cfg, m, status, true) {
 					tickerRetry.Stop()
@@ -275,6 +277,13 @@ func run() error {
 		ReadHeaderTimeout: 3 * time.Second,
 	}
 
+	go func() { //nolint:gosec
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second) //nolint:mnd
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+
 	l.Info("Starting exporter HTTP server", slog.Int("port", cfg.Port))
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		l.Error("Could not start exporter HTTP server", slog.Any("error", err))
@@ -285,7 +294,7 @@ func run() error {
 }
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(context.Background()); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

@@ -1,3 +1,6 @@
+/* Copyright 2026 The Backup_remote_files Authors. All rights reserved. */
+/* SPDX-License-Identifier: MIT */
+
 # AGENTS.md
 
 ## Project Overview
@@ -64,6 +67,8 @@ This is a backup remote files application written in Go. It retrieves files from
   // SPDX-License-Identifier: MIT
   ```
 - Copyright year is always 20XX-20YY or just 20XX if 20XX and 20YY are the same. 20XX is the file's creation year (from `git log --diff-filter=A --follow` for that file). 20YY is the current year.
+- No copyright on `version.txt`
+- Put copyright on `README.md` at the end of the file.
 - All source file should have a copyright header (the syntax depends on the file type). For non-go files, use the appropriate comment syntax (e.g., `//` for `.txt`, `/*` for `.md`) and set a header similar to the `.go` files.
 
 ### Linting

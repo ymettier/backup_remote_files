@@ -1,3 +1,6 @@
+# Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved.
+# SPDX-License-Identifier: MIT
+
 FROM golang:1.26.4 AS builder
 
 ENV GO111MODULE=on

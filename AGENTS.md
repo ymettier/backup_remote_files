@@ -1,4 +1,4 @@
-# GitHub Copilot Instructions for Backup_remote_files
+# AGENTS.md
 
 ## Project Overview
 This is a backup remote files application written in Go. It retrieves files from remote URLs and exports Prometheus metrics for monitoring backup status and health.

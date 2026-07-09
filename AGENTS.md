@@ -162,7 +162,7 @@ This is a backup remote files application written in Go. It retrieves files from
 - `github.com/stretchr/testify` - Testing utilities
 
 ## Commits
-- Never commit, never stage (`git add`), never run any `git commit` command — even if the user explicitly asks you to commit.
+- Never commit, never stage (`git add`), never run any `git commit` command — even if the user explicitly asks you to commit. If you ask and the user says yes, you can commit.
 - Instead, always suggest a full `git commit` command for the user to run themselves.
 - Never work in the `main` branch.
 - Never commit to `main` branch.

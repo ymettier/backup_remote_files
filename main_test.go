@@ -309,13 +309,13 @@ func TestBackupFile_SuccessfulBackup(t *testing.T) {
 
 func TestHTTPError_Unwrap(t *testing.T) {
 	inner := errors.New("inner")
-	err := &httpError{inner}
+	err := &httpError{error: inner}
 	assert.Equal(t, inner, errors.Unwrap(err))
 }
 
 func TestFSError_Unwrap(t *testing.T) {
 	inner := errors.New("inner")
-	err := &fsError{inner}
+	err := &fsError{error: inner}
 	assert.Equal(t, inner, errors.Unwrap(err))
 }
 
@@ -538,7 +538,12 @@ func TestRun_ServesMetrics(t *testing.T) {
 	var resp *http.Response
 	client := &http.Client{}
 	for range 20 {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://localhost:%d/metrics", port), http.NoBody)
+		req, reqErr := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			fmt.Sprintf("http://localhost:%d/metrics", port),
+			http.NoBody,
+		)
 		if reqErr != nil {
 			err = reqErr
 			time.Sleep(50 * time.Millisecond)
@@ -738,7 +743,12 @@ func TestRunBackupLoop_Retry(t *testing.T) {
 	client := &http.Client{}
 	var body []byte
 	for range 80 {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://localhost:%d/metrics", port), http.NoBody)
+		req, reqErr := http.NewRequestWithContext(
+			ctx,
+			http.MethodGet,
+			fmt.Sprintf("http://localhost:%d/metrics", port),
+			http.NoBody,
+		)
 		if reqErr != nil {
 			time.Sleep(50 * time.Millisecond)
 			continue

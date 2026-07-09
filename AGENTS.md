@@ -1,26 +1,34 @@
-# GitHub Copilot Instructions for Backup_remote_files
+/* Copyright 2026 The Backup_remote_files Authors. All rights reserved. */
+/* SPDX-License-Identifier: MIT */
+
+# AGENTS.md
 
 ## Project Overview
 This is a backup remote files application written in Go. It retrieves files from remote URLs and exports Prometheus metrics for monitoring backup status and health.
 
 ## Technology Stack
-- **Language**: Go 1.26.3+
+- **Language**: Go 1.26.4+
 - **Configuration**: YAML via Koanf
 - **Metrics**: Prometheus client_golang
 - **Logging**: Structured logging with slog and lumberjack
 - **Testing**: Go testing + testify for assertions
 - **CLI**: spf13/pflag
-- **Parsing configuration file**: YAML via Koanf
 
 ## Project Structure
 ```
 .
+├── .github/         # GitHub Actions workflows
+├── .golangci.yml    # Linter configuration
+├── .goreleaser.yaml # Release automation
 ├── config/          # Configuration parsing and CLI flags
 ├── logger/          # Structured logging setup
+├── testutil/        # Test helpers
 ├── main.go          # Application entry point and metrics collection
 ├── main_test.go     # Integration tests
-├── go.mod           # Go modules
-└── Dockerfile       # Container image definition
+├── go.mod / go.sum  # Go modules
+├── Dockerfile       # Container image definition
+├── config.yaml.sample  # Example configuration
+└── version.txt      # Build version
 ```
 
 ## Key Components
@@ -52,13 +60,15 @@ This is a backup remote files application written in Go. It retrieves files from
 - Keep functions focused and under 50 lines when possible
 - Use meaningful variable names
 - Use `gofmt` / `goimports` formatting. Max line length 140.
-- Group imports: stdlib first, third-party second, internal (`fileganizer/...`) last.
+- Group imports: stdlib first, third-party second, internal (`backup_remote_files/...`) last.
 - Copyright header on every `.go` file:
   ```go
-  // Copyright 2023 The Backup_remote_files Authors. All rights reserved.
+  // Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved.
   // SPDX-License-Identifier: MIT
   ```
-- Copyright year is always 20XX-20YY or just 20XX if 20XX and 20YY are the same. 20XX is the project founding year. It can be retrieved from the `git log` command. 20YY is the current year.
+- Copyright year is always 20XX-20YY or just 20XX if 20XX and 20YY are the same. 20XX is the file's creation year (from `git log --diff-filter=A --follow` for that file). 20YY is the current year.
+- No copyright on `version.txt`
+- Put copyright on `README.md` at the end of the file.
 - All source file should have a copyright header (the syntax depends on the file type). For non-go files, use the appropriate comment syntax (e.g., `//` for `.txt`, `/*` for `.md`) and set a header similar to the `.go` files.
 
 ### Linting
@@ -131,6 +141,19 @@ This is a backup remote files application written in Go. It retrieves files from
 3. Update help text
 4. Test with -h flag
 
+### Updating Go Version
+1. Update `go 1.xx.x` in `go.mod`
+2. Update Go version reference in AGENTS.md
+3. Update base image in Dockerfile (builder and runtime)
+4. Update `.golangci.yml` if it references a Go version
+5. Run `go mod tidy` after updating
+
+### Modifying Docker Image
+1. Update the builder base image in Dockerfile
+2. Update the runtime base image in Dockerfile
+3. Adjust package manager commands (apk → apt-get when switching from Alpine to Debian)
+4. Test with `docker build -t backup_remote_files .`
+
 ## Dependencies
 - `github.com/knadh/koanf` - Configuration management
 - `github.com/prometheus/client_golang` - Metrics
@@ -139,7 +162,7 @@ This is a backup remote files application written in Go. It retrieves files from
 - `github.com/stretchr/testify` - Testing utilities
 
 ## Commits
-- Never commit, never stage (`git add`), never run any `git commit` command — even if the user explicitly asks you to commit.
+- Never commit, never stage (`git add`), never run any `git commit` command — even if the user explicitly asks you to commit. If you ask and the user says yes, you can commit.
 - Instead, always suggest a full `git commit` command for the user to run themselves.
 - Never work in the `main` branch.
 - Never commit to `main` branch.
@@ -155,7 +178,7 @@ This is a backup remote files application written in Go. It retrieves files from
 - Docker: `docker build -t backup_remote_files .`
 
 ## Linting
-- Lint: `golangci-lint run ./...`. When it fails for versionning reasons, fallback to `docker run -t --rm -v $(pwd):/app:z -w /app golangci/golangci-lint:v2.12.2 golangci-lint run ./...`
+- Lint: `golangci-lint run ./...`. When it fails for versioning reasons, fallback to `docker run -t --rm -v $(pwd):/app:z -w /app golangci/golangci-lint:v2.12.2 golangci-lint run ./...`
 
 ## Important Notes
 - Configuration errors cause immediate exit with os.Exit(1)

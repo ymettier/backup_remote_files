@@ -75,7 +75,7 @@ func TestRetrieveUrls_TargetIsDirectory(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
 	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(context.Background(), cfg, m, status, true)
+	r := retrieveUrls(t.Context(), cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename+".part") {
 		return
 	}
@@ -101,7 +101,7 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
 	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(context.Background(), cfg, m, status, true)
+	r := retrieveUrls(t.Context(), cfg, m, status, true)
 	if !assert.FileExists(t, outputFilename) {
 		return
 	}
@@ -157,7 +157,7 @@ func TestRetrieveUrlsRetry(t *testing.T) {
 	status.success["a"] = true
 	status.success["b"] = false
 
-	r := retrieveUrls(context.Background(), cfg, m, status, false)
+	r := retrieveUrls(t.Context(), cfg, m, status, false)
 
 	assert.True(t, r)
 
@@ -198,7 +198,7 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 
 	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(context.Background(), cfg, m, status, true)
+	r := retrieveUrls(t.Context(), cfg, m, status, true)
 	assert.FileExists(t, outputFilename)
 
 	assert.False(t, r)
@@ -224,7 +224,7 @@ func TestInitializeCounters(t *testing.T) {
 }
 
 func TestBackupFile_InvalidURL(t *testing.T) {
-	_, err := backupFile(context.Background(), "test", "://invalid", "", "", "test.out", 10*time.Second)
+	_, err := backupFile(t.Context(), "test", "://invalid", "", "", "test.out", 10*time.Second)
 	assert.Error(t, err)
 
 	var target *httpError
@@ -237,7 +237,7 @@ func TestBackupFile_HTTPDoError(t *testing.T) {
 	}))
 	ts.Close()
 
-	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out", 10*time.Second)
+	_, err := backupFile(t.Context(), "test", ts.URL, "", "", "test.out", 10*time.Second)
 
 	assert.Error(t, err)
 	var target *httpError
@@ -251,7 +251,7 @@ func TestBackupFile_CreateFileError(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "nonexistent_dir/file.out", 10*time.Second)
+	_, err := backupFile(t.Context(), "test", ts.URL, "", "", "nonexistent_dir/file.out", 10*time.Second)
 
 	assert.Error(t, err)
 	var target *fsError
@@ -268,7 +268,7 @@ func TestBackupFile_CopyError(t *testing.T) {
 	err := os.Symlink("/dev/full", "test.out.part")
 	assert.NoError(t, err)
 
-	_, err = backupFile(context.Background(), "test", ts.URL, "", "", "test.out", 10*time.Second)
+	_, err = backupFile(t.Context(), "test", ts.URL, "", "", "test.out", 10*time.Second)
 
 	assert.Error(t, err)
 	var target *fsError
@@ -283,7 +283,7 @@ func TestBackupFile_TimeoutExceeded(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	_, err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out", 100*time.Millisecond)
+	_, err := backupFile(t.Context(), "test", ts.URL, "", "", "test.out", 100*time.Millisecond)
 
 	assert.Error(t, err)
 	var target *httpError
@@ -298,7 +298,7 @@ func TestBackupFile_SuccessfulBackup(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	size, err := backupFile(context.Background(), "test", ts.URL, "", "", "test.out", 10*time.Second)
+	size, err := backupFile(t.Context(), "test", ts.URL, "", "", "test.out", 10*time.Second)
 
 	assert.NoError(t, err)
 	assert.Equal(t, int64(len(testContent)), size)
@@ -381,7 +381,7 @@ func TestMetricsValues(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 	status := newBackupStatus(cfg.Backups)
 
-	r := retrieveUrls(context.Background(), cfg, m, status, true)
+	r := retrieveUrls(t.Context(), cfg, m, status, true)
 	assert.True(t, r)
 	defer os.Remove(outputFilename)
 
@@ -430,7 +430,7 @@ func TestMetricsValues_BrokenServer(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 	status := newBackupStatus(cfg.Backups)
 
-	_ = retrieveUrls(context.Background(), cfg, m, status, true)
+	_ = retrieveUrls(t.Context(), cfg, m, status, true)
 	defer os.Remove(outputFilename)
 
 	families, err := reg.Gather()
@@ -475,7 +475,7 @@ func TestMetricsValues_RenameBlockedByDirectory(t *testing.T) {
 	m := NewMetrics(reg, cfg.MetricsPrefix)
 	status := newBackupStatus(cfg.Backups)
 
-	_ = retrieveUrls(context.Background(), cfg, m, status, true)
+	_ = retrieveUrls(t.Context(), cfg, m, status, true)
 
 	families, err := reg.Gather()
 	assert.NoError(t, err)
@@ -490,7 +490,7 @@ func TestMetricsValues_RenameBlockedByDirectory(t *testing.T) {
 func getFreePort(t *testing.T) int {
 	t.Helper()
 	lc := net.ListenConfig{}
-	l, err := lc.Listen(context.Background(), "tcp", ":0")
+	l, err := lc.Listen(t.Context(), "tcp", ":0")
 	require.NoError(t, err)
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port
@@ -527,7 +527,7 @@ func TestRun_ServesMetrics(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 	os.Args = []string{programName, "-c", configFile, "-p", strconv.Itoa(port)} //nolint:goconst
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -573,7 +573,7 @@ func TestRun_ParseFlagsError(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 	os.Args = []string{programName, "--unknown-flag"}
 
-	err := run(context.Background())
+	err := run(t.Context())
 	assert.Error(t, err)
 }
 
@@ -584,7 +584,7 @@ func TestRun_ConfigError(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 	os.Args = []string{programName, "-c", "nonexistent.yaml"}
 
-	err := run(context.Background())
+	err := run(t.Context())
 	assert.Error(t, err)
 }
 
@@ -592,12 +592,12 @@ func TestStartMetricsServer_PortConflict(t *testing.T) {
 	port := getFreePort(t)
 
 	var lc net.ListenConfig
-	l, err := lc.Listen(context.Background(), "tcp", ":"+strconv.Itoa(port))
+	l, err := lc.Listen(t.Context(), "tcp", ":"+strconv.Itoa(port))
 	require.NoError(t, err)
 	defer l.Close()
 
 	reg := prometheus.NewRegistry()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	errCh := make(chan error, 1)
@@ -635,7 +635,7 @@ func TestRunBackupLoop_RetryReset(t *testing.T) {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	tickerRetry := time.NewTicker(1 * time.Hour)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 
 	runBackupLoop(ctx, cfg, m, status, ticker, tickerRetry)
@@ -683,7 +683,7 @@ func TestRunBackupLoop_TickerFires(t *testing.T) {
 			ticker := time.NewTicker(tt.interval)
 			tickerRetry := time.NewTicker(tt.retryInterval)
 
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 			defer cancel()
 
 			runBackupLoop(ctx, cfg, m, status, ticker, tickerRetry)
@@ -727,7 +727,7 @@ func TestRunBackupLoop_Retry(t *testing.T) {
 	defer func() { os.Args = oldArgs }()
 	os.Args = []string{programName, "-c", configFile, "-p", strconv.Itoa(port)}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	errCh := make(chan error, 1)

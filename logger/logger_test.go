@@ -4,7 +4,6 @@
 package logger
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -94,7 +93,7 @@ func TestLogLevel(t *testing.T) {
 	defer os.Unsetenv("BRF_LOG_LEVEL")
 
 	l := newLogger(nil)
-	assert.True(t, l.Enabled(context.Background(), -4)) // slog.LevelDebug is -4
+	assert.True(t, l.Enabled(t.Context(), -4)) // slog.LevelDebug is -4
 }
 
 func TestGetWriter_File(t *testing.T) {
@@ -141,7 +140,7 @@ func TestReset(t *testing.T) {
 
 func TestWithCtx_FromCtx(t *testing.T) {
 	l := newLogger(nil)
-	ctx := WithCtx(context.Background(), l)
+	ctx := WithCtx(t.Context(), l)
 
 	extracted := FromCtx(ctx)
 	assert.Same(t, l, extracted)
@@ -149,7 +148,7 @@ func TestWithCtx_FromCtx(t *testing.T) {
 
 func TestFromCtx_NoLogger(t *testing.T) {
 	resetGlobal()
-	l := FromCtx(context.Background())
+	l := FromCtx(t.Context())
 	assert.NotNil(t, l) // returns the default logger
 }
 
@@ -161,8 +160,8 @@ func TestNewLogger_InvalidLevelEnv(t *testing.T) {
 	assert.NotNil(t, l)
 
 	// should have defaulted to INFO
-	assert.True(t, l.Enabled(context.Background(), 0))   // slog.LevelInfo
-	assert.False(t, l.Enabled(context.Background(), -8)) // slog.LevelDebug
+	assert.True(t, l.Enabled(t.Context(), 0))   // slog.LevelInfo
+	assert.False(t, l.Enabled(t.Context(), -8)) // slog.LevelDebug
 }
 
 func TestNewLogger_NilOptsNoEnv(t *testing.T) {

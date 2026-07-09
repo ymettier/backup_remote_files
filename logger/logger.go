@@ -105,7 +105,7 @@ func newLogger(opts *LogOptions) *Logger {
 	} else {
 		handler = slog.NewTextHandler(w, handlerOpts)
 	}
-	l := &Logger{slog.New(handler)}
+	l := &Logger{Logger: slog.New(handler)}
 
 	if opts != nil {
 		attrs := []any{

@@ -67,7 +67,7 @@ go build -v .
 ### Run Linters
 
 ```bash
-GOLANGCILINTVERSION="2.9.0" # See https://hub.docker.com/r/golangci/golangci-lint/tags
+GOLANGCILINTVERSION="2.12.2" # See https://hub.docker.com/r/golangci/golangci-lint/tags
 DOCKER=podman # or DOCKER="sudo docker" or DOCKER="docker"
 
 ${DOCKER} run -t --rm --privileged -v $(pwd):/app -w /app "golangci/golangci-lint:v${GOLANGCILINTVERSION}" golangci-lint run -v

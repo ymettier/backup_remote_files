@@ -3,6 +3,7 @@
 [![go-build](https://github.com/ymettier/backup_remote_files/actions/workflows/go.yml/badge.svg)](https://github.com/ymettier/backup_remote_files/actions/workflows/go.yml)
 [![golangci-lint](https://github.com/ymettier/backup_remote_files/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/ymettier/backup_remote_files/actions/workflows/golangci-lint.yml)
 [![version](https://img.shields.io/github/v/release/ymettier/backup_remote_files)](https://github.com/ymettier/backup_remote_files/releases)
+[![codecov](https://codecov.io/gh/ymettier/backup_remote_files/branch/main/graph/badge.svg)](https://codecov.io/gh/ymettier/backup_remote_files)
 
 Tool to retrieve remote files like vcf and ics files, with a Prometheus exporter for monitoring.
 

@@ -2,7 +2,7 @@
 
 [![github](https://img.shields.io/badge/github-ymettier/backup_remote_files-181717?logo=github)](https://github.com/ymettier/backup_remote_files)
 [![version](https://img.shields.io/github/v/release/ymettier/backup_remote_files?color=blue)](https://github.com/ymettier/backup_remote_files/releases)
-[![license](https://img.shields.io/github/license/ymettier/backup_remote_files)](https://github.com/ymettier/backup_remote_files/blob/main/LICENSE)
+[![license](https://img.shields.io/github/license/ymettier/backup_remote_files?color=blue)](https://github.com/ymettier/backup_remote_files/blob/main/LICENSE)
 [![go-build](https://github.com/ymettier/backup_remote_files/actions/workflows/go.yml/badge.svg)](https://github.com/ymettier/backup_remote_files/actions/workflows/go.yml)
 [![golangci-lint](https://github.com/ymettier/backup_remote_files/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/ymettier/backup_remote_files/actions/workflows/golangci-lint.yml)
 [![codecov](https://codecov.io/gh/ymettier/backup_remote_files/branch/main/graph/badge.svg)](https://codecov.io/gh/ymettier/backup_remote_files)

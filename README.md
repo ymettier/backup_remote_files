@@ -104,5 +104,5 @@ Build:
 podman build -t backup_remote_files:build .
 ```
 
-/* Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved. */
-/* SPDX-License-Identifier: MIT */
+<!-- Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved. -->
+<!-- SPDX-License-Identifier: MIT -->

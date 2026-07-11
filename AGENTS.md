@@ -7,7 +7,7 @@
 This is a backup remote files application written in Go. It retrieves files from remote URLs and exports Prometheus metrics for monitoring backup status and health.
 
 ## Technology Stack
-- **Language**: Go 1.26.4+
+- **Language**: Go 1.26+
 - **Configuration**: YAML via Koanf
 - **Metrics**: Prometheus client_golang
 - **Logging**: Structured logging with slog and lumberjack
@@ -176,6 +176,12 @@ This is a backup remote files application written in Go. It retrieves files from
 - Build: `go build`
 - Test: `go test ./...`
 - Docker: `docker build -t backup_remote_files .`
+
+## Version Management
+- Keep Go version in `Dockerfile` and `.github/workflows/*.yml` in sync. Use the latest patch release (e.g., `1.26.5` not `1.26` or `stable`).
+- `go.mod` is the exception: its `go` directive sets the minimum Go version. Only bump when the code requires a newer toolchain feature.
+- Keep all tooling in `.github/workflows/` (goreleaser, golangci-lint, actions/\*) at their latest stable versions.
+- When updating a version, check all references across the project (go.mod, Dockerfile, workflows, AGENTS.md).
 
 ## Linting
 - Lint: `golangci-lint run ./...`. When it fails for versioning reasons, fallback to `docker run -t --rm -v $(pwd):/app:z -w /app golangci/golangci-lint:v2.12.2 golangci-lint run ./...`

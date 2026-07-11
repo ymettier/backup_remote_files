@@ -218,3 +218,25 @@ func TestLoggerConfigPartialOverrides(t *testing.T) {
 	assert.True(t, opts.Compress)
 	assert.False(t, opts.JSON)
 }
+
+func TestNew_MissingURL(t *testing.T) {
+	testutil.UseTempDir(t)
+	configContent := "backups:\n  test:\n    outputFile: out.txt\ninterval: 1h\nretryInterval: 1h\n"
+	err := os.WriteFile("missing_url.yaml", []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	_, err = New("missing_url.yaml", 8080)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "url is required")
+}
+
+func TestNew_MissingOutputFile(t *testing.T) {
+	testutil.UseTempDir(t)
+	configContent := "backups:\n  test:\n    url: http://example.com\ninterval: 1h\nretryInterval: 1h\n"
+	err := os.WriteFile("missing_output.yaml", []byte(configContent), 0600)
+	require.NoError(t, err)
+
+	_, err = New("missing_output.yaml", 8080)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "outputFile is required")
+}

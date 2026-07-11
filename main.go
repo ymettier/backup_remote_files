@@ -140,6 +140,9 @@ func fetchURL(
 	}
 	req.SetBasicAuth(username, password)
 
+	// Create a new client per request — these are periodic backups
+	// (typically every 24h), so connection pooling is not beneficial
+	// and each backup may target a different host.
 	client := &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{

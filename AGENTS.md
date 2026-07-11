@@ -170,6 +170,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Never work in or commit to the `main` branch.
 - Commit message: clear, descriptive, lowercase, no capital start.
 - Follow [Conventional Commits](https://www.conventionalcommits.org/): `<type>: <description>`.
+- Before commit, always check the copyright in the files to commit.
 
 ## Build & Run
 - Build: `go build`

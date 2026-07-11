@@ -284,12 +284,21 @@ func readBackup(k *koanf.Koanf, l *logger.Logger, id string) (Backup, error) {
 		return Backup{}, err
 	}
 
+	url := k.String(prefix + "url")
+	if url == "" {
+		return Backup{}, fmt.Errorf("backup %q: url is required", id)
+	}
+	outputFile := k.String(prefix + "outputFile")
+	if outputFile == "" {
+		return Backup{}, fmt.Errorf("backup %q: outputFile is required", id)
+	}
+
 	return Backup{
 		ID:         id,
-		URL:        k.String(prefix + "url"),
+		URL:        url,
 		Username:   k.String(prefix + "username"),
 		Password:   k.String(prefix + "password"),
-		OutputFile: k.String(prefix + "outputFile"),
+		OutputFile: outputFile,
 		Timeout:    timeout,
 	}, nil
 }

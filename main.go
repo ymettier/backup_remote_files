@@ -129,20 +129,14 @@ type fsError struct{ error }
 
 func (e *fsError) Unwrap() error { return e.error }
 
-func backupFile(
+func fetchURL(
 	ctx context.Context,
-	id, url, username, password, outputFile string,
+	url, username, password string,
 	timeout time.Duration,
-) (int64, error) {
-	l := logger.Get()
+) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
-		l.Error("Failed to create new request",
-			slog.String("id", id),
-			slog.String("url", url),
-			slog.Any("error", err),
-		)
-		return 0, &httpError{error: err}
+		return nil, &httpError{error: err}
 	}
 	req.SetBasicAuth(username, password)
 
@@ -157,12 +151,51 @@ func backupFile(
 
 	resp, err := client.Do(req)
 	if err != nil {
-		l.Error("Failed to read data",
+		return nil, &httpError{error: err}
+	}
+
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		resp.Body.Close()
+		return nil, &httpError{error: errors.New("HTTP status >= 300")}
+	}
+
+	return resp, nil
+}
+
+func saveToFile(r io.Reader, outputFile string) (int64, error) {
+	f, err := os.Create(outputFile + ".part")
+	if err != nil {
+		return 0, &fsError{error: err}
+	}
+	defer f.Close()
+
+	written, err := io.Copy(f, r)
+	if err != nil {
+		return 0, &fsError{error: err}
+	}
+
+	if err := os.Rename(outputFile+".part", outputFile); err != nil {
+		return 0, &fsError{error: err}
+	}
+
+	return written, nil
+}
+
+func backupFile(
+	ctx context.Context,
+	id, url, username, password, outputFile string,
+	timeout time.Duration,
+) (int64, error) {
+	l := logger.Get()
+
+	resp, err := fetchURL(ctx, url, username, password, timeout)
+	if err != nil {
+		l.Error("Failed to fetch URL",
 			slog.String("id", id),
 			slog.String("url", url),
 			slog.Any("error", err),
 		)
-		return 0, &httpError{error: err}
+		return 0, err
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -170,51 +203,16 @@ func backupFile(
 		}
 	}()
 
-	if resp.StatusCode >= http.StatusMultipleChoices {
-		l.Error("Request returned HTTP status code >= 300",
-			slog.String("id", id),
-			slog.String("url", url),
-			slog.Int("status", resp.StatusCode),
-		)
-		return 0, &httpError{error: errors.New("HTTP status >= 300")}
-	}
-
-	outputFileFD, err := os.Create(outputFile + ".part")
+	written, err := saveToFile(resp.Body, outputFile)
 	if err != nil {
-		l.Error("Failed to open file for writing",
+		l.Error("Failed to save file",
 			slog.String("id", id),
 			slog.String("filename", outputFile),
 			slog.Any("error", err),
 		)
-		return 0, &fsError{error: err}
-	}
-	defer func() {
-		if err := outputFileFD.Close(); err != nil {
-			l.Error("Failed to close output file",
-				slog.String("id", id),
-				slog.String("filename", outputFile),
-				slog.Any("error", err),
-			)
-		}
-	}()
-	written, err := io.Copy(outputFileFD, resp.Body)
-	if err != nil {
-		l.Error("Failed to write contents to file",
-			slog.String("id", id),
-			slog.String("filename", outputFile),
-		)
-		return 0, &fsError{error: err}
+		return 0, err
 	}
 
-	err = os.Rename(outputFile+".part", outputFile)
-	if err != nil {
-		l.Error("Failed to rename file",
-			slog.String("id", id),
-			slog.String("oldFilename", outputFile+".part"),
-			slog.String("newFilename", outputFile),
-		)
-		return 0, &fsError{error: err}
-	}
 	l.Info("Successfully retrieved file",
 		slog.String("id", id),
 		slog.String("filename", outputFile),

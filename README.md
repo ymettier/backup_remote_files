@@ -1,5 +1,8 @@
 # backup_remote_files
 
+[![go-build](https://github.com/ymettier/backup_remote_files/actions/workflows/go.yml/badge.svg)](https://github.com/ymettier/backup_remote_files/actions/workflows/go.yml)
+[![golangci-lint](https://github.com/ymettier/backup_remote_files/actions/workflows/golangci-lint.yml/badge.svg)](https://github.com/ymettier/backup_remote_files/actions/workflows/golangci-lint.yml)
+
 Tool to retrieve remote files like vcf and ics files, with a Prometheus exporter for monitoring.
 
 ## Motivation

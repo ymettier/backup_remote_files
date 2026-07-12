@@ -773,3 +773,34 @@ func TestRunBackupLoop_Retry(t *testing.T) {
 		t.Fatal("run() did not return after cancellation")
 	}
 }
+
+// roundTripFunc adapts a function to an http.RoundTripper for tests.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// failCloseBody is an io.ReadCloser whose Close always returns an error,
+// used to exercise the body-close error path in backupFile.
+type failCloseBody struct{}
+
+func (failCloseBody) Read(_ []byte) (int, error) { return 0, io.EOF }
+
+func (failCloseBody) Close() error { return errors.New("close failed") }
+
+func TestBackupFile_BodyCloseError(t *testing.T) {
+	testutil.UseTempDir(t)
+
+	origNewClient := newClient
+	newClient = func(time.Duration) *http.Client {
+		return &http.Client{
+			Transport: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: http.StatusOK, Body: failCloseBody{}}, nil
+			}),
+		}
+	}
+	t.Cleanup(func() { newClient = origNewClient })
+
+	_, err := backupFile(t.Context(), "test", "http://example.com", "", "", "test.out", 10*time.Second)
+	assert.NoError(t, err)
+	assert.FileExists(t, "test.out")
+}

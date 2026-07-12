@@ -130,6 +130,19 @@ type fsError struct{ error }
 
 func (e *fsError) Unwrap() error { return e.error }
 
+// newClient builds an HTTP client for a single request. It is a variable so
+// tests can substitute a fake transport.
+var newClient = func(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			TLSHandshakeTimeout:   timeout,
+			ResponseHeaderTimeout: timeout,
+		},
+	}
+}
+
 func fetchURL(
 	ctx context.Context,
 	url, username, password string,
@@ -144,14 +157,7 @@ func fetchURL(
 	// Create a new client per request — these are periodic backups
 	// (typically every 24h), so connection pooling is not beneficial
 	// and each backup may target a different host.
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
-			TLSHandshakeTimeout:   timeout,
-			ResponseHeaderTimeout: timeout,
-		},
-	}
+	client := newClient(timeout)
 
 	resp, err := client.Do(req)
 	if err != nil {

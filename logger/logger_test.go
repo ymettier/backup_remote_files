@@ -223,3 +223,32 @@ func TestGet_RaceCondition(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestRedactURL(t *testing.T) {
+	tests := []struct {
+		name   string
+		rawURL string
+		want   string
+	}{
+		{ //nolint:gosec
+			name:   "strips credentials",
+			rawURL: "https://user:secret@example.com/path",
+			want:   "https://example.com/path", //nolint:goconst
+		},
+		{
+			name:   "no credentials unchanged",
+			rawURL: "https://example.com/path",
+			want:   "https://example.com/path",
+		},
+		{
+			name:   "unparseable returned as-is",
+			rawURL: "://not a url",
+			want:   "://not a url",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, RedactURL(tt.rawURL))
+		})
+	}
+}

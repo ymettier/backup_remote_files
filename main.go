@@ -167,7 +167,8 @@ func fetchURL(
 }
 
 func saveToFile(r io.Reader, outputFile string) (int64, error) {
-	f, err := os.Create(outputFile + ".part")
+	partFile := outputFile + ".part"
+	f, err := os.Create(partFile)
 	if err != nil {
 		return 0, &fsError{error: err}
 	}
@@ -175,10 +176,12 @@ func saveToFile(r io.Reader, outputFile string) (int64, error) {
 
 	written, err := io.Copy(f, r)
 	if err != nil {
+		_ = os.Remove(partFile)
 		return 0, &fsError{error: err}
 	}
 
-	if err := os.Rename(outputFile+".part", outputFile); err != nil {
+	if err := os.Rename(partFile, outputFile); err != nil {
+		_ = os.Remove(partFile)
 		return 0, &fsError{error: err}
 	}
 

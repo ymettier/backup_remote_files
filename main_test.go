@@ -76,9 +76,7 @@ func TestRetrieveUrls_TargetIsDirectory(t *testing.T) {
 
 	status := newBackupStatus(cfg.Backups)
 	r := retrieveUrls(t.Context(), cfg, m, status, true)
-	if !assert.FileExists(t, outputFilename+".part") {
-		return
-	}
+	assert.NoFileExists(t, outputFilename+".part")
 
 	assert.True(t, r)
 }

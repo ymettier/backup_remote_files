@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
@@ -87,7 +88,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 			prometheus.CounterOpts{
 				Namespace: namespace,
 				Name:      "backup_nb",
-				Help:      "Number of retrievals",
+				Help:      "Number of retrieval rounds, including retries",
 			},
 		),
 	}
@@ -129,6 +130,19 @@ type fsError struct{ error }
 
 func (e *fsError) Unwrap() error { return e.error }
 
+// newClient builds an HTTP client for a single request. It is a variable so
+// tests can substitute a fake transport.
+var newClient = func(timeout time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
+			TLSHandshakeTimeout:   timeout,
+			ResponseHeaderTimeout: timeout,
+		},
+	}
+}
+
 func fetchURL(
 	ctx context.Context,
 	url, username, password string,
@@ -143,14 +157,7 @@ func fetchURL(
 	// Create a new client per request — these are periodic backups
 	// (typically every 24h), so connection pooling is not beneficial
 	// and each backup may target a different host.
-	client := &http.Client{
-		Timeout: timeout,
-		Transport: &http.Transport{
-			DialContext:           (&net.Dialer{Timeout: timeout}).DialContext,
-			TLSHandshakeTimeout:   timeout,
-			ResponseHeaderTimeout: timeout,
-		},
-	}
+	client := newClient(timeout)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -159,14 +166,15 @@ func fetchURL(
 
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		resp.Body.Close()
-		return nil, &httpError{error: errors.New("HTTP status >= 300")}
+		return nil, &httpError{error: fmt.Errorf("unexpected status %d %s", resp.StatusCode, resp.Status)}
 	}
 
 	return resp, nil
 }
 
 func saveToFile(r io.Reader, outputFile string) (int64, error) {
-	f, err := os.Create(outputFile + ".part")
+	partFile := outputFile + ".part"
+	f, err := os.Create(partFile)
 	if err != nil {
 		return 0, &fsError{error: err}
 	}
@@ -174,10 +182,12 @@ func saveToFile(r io.Reader, outputFile string) (int64, error) {
 
 	written, err := io.Copy(f, r)
 	if err != nil {
+		_ = os.Remove(partFile)
 		return 0, &fsError{error: err}
 	}
 
-	if err := os.Rename(outputFile+".part", outputFile); err != nil {
+	if err := os.Rename(partFile, outputFile); err != nil {
+		_ = os.Remove(partFile)
 		return 0, &fsError{error: err}
 	}
 
@@ -195,7 +205,7 @@ func backupFile(
 	if err != nil {
 		l.Error("Failed to fetch URL",
 			slog.String("id", id),
-			slog.String("url", url),
+			slog.String("url", logger.RedactURL(url)),
 			slog.Any("error", err),
 		)
 		return 0, err
@@ -367,8 +377,11 @@ func run(ctx context.Context) error {
 }
 
 func main() {
-	if err := run(context.Background()); err != nil {
-		if !errors.Is(err, flag.ErrHelp) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+
+	if err := run(ctx); err != nil {
+		cancel()
+		if !errors.Is(err, flag.ErrHelp) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

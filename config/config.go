@@ -271,7 +271,7 @@ func (c *Config) readBackups(k *koanf.Koanf, l *logger.Logger) error {
 			return err
 		}
 		c.Backups = append(c.Backups, backup)
-		l.Info("Config: backup url", slog.String("url", backup.URL))
+		l.Info("Config: backup url", slog.String("url", logger.RedactURL(backup.URL)))
 	}
 	return nil
 }

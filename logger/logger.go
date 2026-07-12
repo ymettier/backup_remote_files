@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -165,4 +166,15 @@ func FromCtx(ctx context.Context) *Logger {
 // WithCtx returns a copy of ctx with the Logger attached.
 func WithCtx(ctx context.Context, l *Logger) context.Context {
 	return context.WithValue(ctx, ctxKey{}, l)
+}
+
+// RedactURL returns rawURL with any userinfo (username/password) stripped,
+// so it can be logged without leaking credentials.
+func RedactURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	u.User = nil
+	return u.String()
 }

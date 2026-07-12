@@ -199,7 +199,7 @@ func backupFile(
 	if err != nil {
 		l.Error("Failed to fetch URL",
 			slog.String("id", id),
-			slog.String("url", url),
+			slog.String("url", logger.RedactURL(url)),
 			slog.Any("error", err),
 		)
 		return 0, err

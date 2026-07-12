@@ -39,9 +39,14 @@ and exports Prometheus metrics for monitoring backup status and health.
 
 ### Configuration (config/config.go)
 - CLI flag parsing: `-c/--config` (required), `-p/--port` (default 9289), `-V/--version`
-- YAML configuration parsing using Koanf
 - Support for multiple backup definitions with URL, username, password, outputFile
 - Logging configuration per logger/LogOptions
+- Use Koanf for all YAML parsing
+- Use spf13/pflag for CLI flag parsing
+- Provide sensible defaults for all config options
+- Validate configuration values at startup
+- Support both short and long CLI flags
+- With Koanf, prefer getting typed values than using the Get() method.
 
 ### Main Application (main.go)
 - Prometheus metrics registry for backup status tracking
@@ -82,14 +87,6 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Logger: singleton via `logger.Get()`.
 - Context: pass `context.Context` to operations that may need cancellation.
 
-### Configuration Management
-- Use Koanf for all YAML parsing
-- Use spf13/pflag for CLI flag parsing
-- Provide sensible defaults for all config options
-- Validate configuration values at startup
-- Support both short and long CLI flags
-- With Koanf, prefer getting typed values than using the Get() method.
-
 ### Environment Variables
 - Use optional environment variables for configuration (e.g., `BRF_BACKUP_DIR`...)
 - Environment variables should override values from the config file
@@ -124,6 +121,17 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Always clean up test artifacts with defer
 - Test data files must be placed in the `testdata/` directory
 - Unused testdata files must be removed
+
+## HTTP Client Design
+
+The application creates a new HTTP client per request in `main.go`. This design is intentional and well-suited for this workload because:
+
+1. **Periodic backups**: Backups typically run every 24 hours or so, so connection pooling benefits are minimal
+2. **Different hosts**: Each backup may target a different host, making a per-host pool impractical
+3. **Isolation**: Fresh clients provide clean state per backup operation, avoiding resource leaks
+4. **Simplicity**: Simpler code without complex connection management for edge cases
+
+This approach avoids the complexity of maintaining connection pools while still being performant for the usage pattern.
 
 ## Common Tasks
 

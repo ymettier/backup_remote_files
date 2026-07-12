@@ -15,7 +15,7 @@ var (
 
 // UseTempDir changes the working directory to a fresh temporary directory for
 // the duration of the test, restoring the original directory on cleanup.
-func UseTempDir(t *testing.T) {
+func UseTempDir(t testing.TB) {
 	t.Helper()
 	if err := useTempDir(t); err != nil {
 		t.Fatal(err)

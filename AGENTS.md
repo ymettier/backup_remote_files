@@ -15,7 +15,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - **Logging**: `log/slog` (stdlib, text handler, defaults to stderr)
 - **Log rotation**: `gopkg.in/natefinch/lumberjack.v2`
 - **Testing**: `testing` + `github.com/stretchr/testify/assert`
-- **Build**: GoReleaser, CGO_ENABLED=0, Linux only (amd64/arm64)
+- **Build**: GoReleaser, CGO_ENABLED=0, Linux only (amd64/arm/arm64)
 - Avoid `github.com/sirupsen/logrus` (blocked by depguard linter)
 
 ## Project Structure

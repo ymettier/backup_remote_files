@@ -99,6 +99,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Register metrics immediately after creation
 - Assign labels consistently (e.g., "id" for backup identifiers)
 - Document what each metric represents in the Help text
+- `backup_nb` counts every retrieval round (full runs **and** retry batches), not individual files or successful backups
 
 ### Error Handling
 - Use slog for error logging with context

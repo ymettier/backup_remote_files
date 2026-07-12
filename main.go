@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
 	"strconv"
 	"strings"
@@ -367,8 +368,11 @@ func run(ctx context.Context) error {
 }
 
 func main() {
-	if err := run(context.Background()); err != nil {
-		if !errors.Is(err, flag.ErrHelp) {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+
+	if err := run(ctx); err != nil {
+		cancel()
+		if !errors.Is(err, flag.ErrHelp) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}

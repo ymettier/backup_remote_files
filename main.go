@@ -160,7 +160,7 @@ func fetchURL(
 
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		resp.Body.Close()
-		return nil, &httpError{error: errors.New("HTTP status >= 300")}
+		return nil, &httpError{error: fmt.Errorf("unexpected status %d %s", resp.StatusCode, resp.Status)}
 	}
 
 	return resp, nil

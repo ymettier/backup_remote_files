@@ -352,7 +352,7 @@ func findMetric(families []*dto.MetricFamily, name string) *dto.MetricFamily {
 func findMetricWithID(family *dto.MetricFamily, id string) *dto.Metric {
 	for _, m := range family.GetMetric() {
 		for _, l := range m.GetLabel() {
-			if l.GetName() == "id" && l.GetValue() == id { //nolint:goconst
+			if l.GetName() == "id" && l.GetValue() == id {
 				return m
 			}
 		}

@@ -89,8 +89,8 @@ func TestGetOtherJsonLogFile(t *testing.T) {
 
 func TestLogLevel(t *testing.T) {
 	tests := []struct {
-		name    string
-		env     string
+		name string
+		env  string
 	}{
 		{
 			name: "debug enabled",
@@ -131,14 +131,14 @@ func TestGetWriter(t *testing.T) {
 			useTmp:   true,
 		},
 		{
-			name:     "stdout",
+			name:     "stdout", //nolint:goconst
 			opts:     &LogOptions{Filename: "stdout"},
 			wantNil:  false,
 			wantFile: false,
 			useTmp:   false,
 		},
 		{
-			name:     "stderr",
+			name:     "stderr", //nolint:goconst
 			opts:     &LogOptions{Filename: "stderr"},
 			wantNil:  false,
 			wantFile: false,

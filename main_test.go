@@ -26,7 +26,12 @@ import (
 	"backup_remote_files/testutil"
 )
 
-const programName = "./backup_remote_files"
+const (
+	programName       = "./backup_remote_files"
+	defaultOutputFile = "outputFilename"
+	defaultPartFile   = "outputFilename.part"
+	testOutputFile    = "test.out"
+)
 
 func createConfigFile(t *testing.T, key, url string) (configurationFilename, outputFilename string) {
 	t.Helper()
@@ -53,158 +58,163 @@ func createConfigFile(t *testing.T, key, url string) (configurationFilename, out
 	return configurationFilename, outputFilename
 }
 
-func TestRetrieveUrls_TargetIsDirectory(t *testing.T) {
-	testutil.UseTempDir(t)
-	wantedMsg := "Iune0Shaex"
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintln(w, wantedMsg)
-	}))
-	defer ts.Close()
-
-	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
-
-	err := os.Mkdir(outputFilename, 0750)
-	assert.NoError(t, err)
-
-	cfg, err := config.New(configurationFilename, 9289)
-	assert.NoError(t, err)
-	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg, cfg.MetricsPrefix)
-
-	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(t.Context(), cfg, m, status, true)
-	assert.NoFileExists(t, outputFilename+".part")
-
-	assert.True(t, r)
-}
-
-func TestRetrieveUrlsSimple(t *testing.T) {
-	testutil.UseTempDir(t)
-	wantedMsg := "voh0ahch3E"
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintln(w, wantedMsg)
-	}))
-	defer ts.Close()
-
-	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
-
-	cfg, err := config.New(configurationFilename, 9289)
-	assert.NoError(t, err)
-	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg, cfg.MetricsPrefix)
-
-	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(t.Context(), cfg, m, status, true)
-	if !assert.FileExists(t, outputFilename) {
-		return
+func TestRetrieveUrls(t *testing.T) {
+	tests := []struct {
+		name            string
+		setup           func(t *testing.T) (string, string, func())
+		configContent   string
+		modifyConfig    func(*config.Config)
+		modifyStatus    func(map[string]bool)
+		isRetry         bool
+		wantSuccess     bool
+		wantFileExist   string
+		wantFileGone    string
+		checkContent    string
+		checkOldContent string
+	}{
+		{
+			name: "target is directory",
+			setup: func(t *testing.T) (string, string, func()) {
+				testutil.UseTempDir(t)
+				wantedMsg := "Iune0Shaex"
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					fmt.Fprintln(w, wantedMsg)
+				}))
+				return ts.URL, wantedMsg, func() { ts.Close() }
+			},
+			modifyConfig: func(cfg *config.Config) { err := os.Mkdir(cfg.Backups[0].OutputFile, 0750); assert.NoError(t, err) },
+			isRetry:      true,
+			wantSuccess:  true,
+			wantFileGone: defaultPartFile,
+		},
+		{
+			name: "simple success",
+			setup: func(t *testing.T) (string, string, func()) {
+				testutil.UseTempDir(t)
+				wantedMsg := "voh0ahch3E"
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					fmt.Fprintln(w, wantedMsg)
+				}))
+				return ts.URL, wantedMsg, func() { ts.Close() }
+			},
+			isRetry:       true,
+			wantSuccess:   true,
+			wantFileExist: defaultOutputFile,
+			checkContent:  "voh0ahch3E\n",
+		},
+		{
+			name: "retry only failed",
+			setup: func(t *testing.T) (string, string, func()) {
+				testutil.UseTempDir(t)
+				wantedMsg := "Iune0Shaex"
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					fmt.Fprintln(w, wantedMsg)
+				}))
+				return ts.URL, wantedMsg, func() { ts.Close() }
+			},
+			configContent: `backups:
+  a:
+    url: '%s'
+    username: ''
+    password: ''
+    outputFile: 'retry_a.out'
+  b:
+    url: '%s'
+    username: ''
+    password: ''
+    outputFile: 'retry_b.out'
+interval: '1m'
+retryInterval: '10s'
+metricsPrefix: 'backuprf'`,
+			modifyStatus:  func(success map[string]bool) { success["a"] = true; success["b"] = false },
+			isRetry:       false,
+			wantSuccess:   true,
+			wantFileGone:  "retry_a.out",
+			wantFileExist: "retry_b.out",
+			checkContent:  "Iune0Shaex\n",
+		},
+		{
+			name: "broken server preserves old file",
+			setup: func(t *testing.T) (string, string, func()) {
+				testutil.UseTempDir(t)
+				wantedMsg := "aiK8eephiT"
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte("Internal Server Error"))
+				}))
+				return ts.URL, wantedMsg, func() { ts.Close() }
+			},
+			modifyConfig: func(cfg *config.Config) {
+				err := os.WriteFile(cfg.Backups[0].OutputFile, []byte("old"), 0600)
+				assert.NoError(t, err)
+			},
+			isRetry:         true,
+			wantSuccess:     false,
+			wantFileExist:   defaultOutputFile,
+			checkOldContent: "old",
+		},
 	}
 
-	assert.True(t, r)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url, wantedMsg, cleanup := tt.setup(t)
+			defer cleanup()
 
-	outputFile, err := os.Open(outputFilename)
-	if !assert.NoError(t, err) {
-		return
+			var configFilename, outputFilename string
+			if tt.configContent != "" {
+				configFilename = "test_config.yaml"
+				outputFilename = "retry_b.out"
+				err := os.WriteFile(configFilename, []byte(fmt.Sprintf(tt.configContent, url, url)), 0600)
+				require.NoError(t, err)
+			} else {
+				configFilename, outputFilename = createConfigFile(t, wantedMsg, url)
+			}
+
+			cfgVal, err := config.New(configFilename, 9289)
+			require.NoError(t, err)
+			cfg := &cfgVal
+			if tt.modifyConfig != nil {
+				tt.modifyConfig(cfg)
+			}
+
+			reg := prometheus.NewRegistry()
+			m := NewMetrics(reg, cfg.MetricsPrefix)
+
+			status := newBackupStatus(cfg.Backups)
+			if tt.modifyStatus != nil {
+				tt.modifyStatus(status.success)
+			}
+
+			r := retrieveUrls(t.Context(), *cfg, m, status, tt.isRetry)
+			assert.Equal(t, tt.wantSuccess, r)
+
+			if tt.wantFileGone != "" {
+				gone := tt.wantFileGone
+				if gone == defaultPartFile {
+					gone = outputFilename + ".part"
+				}
+				_, err := os.Stat(gone)
+				assert.True(t, os.IsNotExist(err), "%s should not exist", gone)
+			}
+
+			if tt.wantFileExist != "" {
+				exist := tt.wantFileExist
+				if exist == defaultOutputFile {
+					exist = outputFilename
+				}
+				if assert.FileExists(t, exist) {
+					content, err := os.ReadFile(exist)
+					require.NoError(t, err)
+					if tt.checkContent != "" {
+						assert.Equal(t, tt.checkContent, string(content))
+					}
+					if tt.checkOldContent != "" {
+						assert.Equal(t, tt.checkOldContent, string(content))
+					}
+				}
+			}
+		})
 	}
-	defer outputFile.Close()
-
-	byteValue, _ := io.ReadAll(outputFile)
-	assert.Equal(t, string(byteValue), wantedMsg+"\n")
-}
-
-func TestRetrieveUrlsRetry(t *testing.T) {
-	testutil.UseTempDir(t)
-	wantedMsg := "Iune0Shaex"
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintln(w, wantedMsg)
-	}))
-	defer ts.Close()
-
-	configContent := fmt.Sprintf(
-		"backups:\n"+
-			"  a:\n"+
-			"    url: '%s'\n"+
-			"    username: ''\n"+
-			"    password: ''\n"+
-			"    outputFile: 'retry_a.out'\n"+
-			"  b:\n"+
-			"    url: '%s'\n"+
-			"    username: ''\n"+
-			"    password: ''\n"+
-			"    outputFile: 'retry_b.out'\n"+
-			"interval: '1m'\n"+
-			"retryInterval: '10s'\n"+
-			"metricsPrefix: 'backuprf'\n",
-		ts.URL, ts.URL)
-
-	configFilename := "retry_config.yaml"
-	err := os.WriteFile(configFilename, []byte(configContent), 0600)
-	assert.NoError(t, err)
-
-	cfg, err := config.New(configFilename, 9289)
-	assert.NoError(t, err)
-	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg, cfg.MetricsPrefix)
-
-	status := newBackupStatus(cfg.Backups)
-	status.success["a"] = true
-	status.success["b"] = false
-
-	r := retrieveUrls(t.Context(), cfg, m, status, false)
-
-	assert.True(t, r)
-
-	_, err = os.Stat("retry_a.out")
-	assert.True(t, os.IsNotExist(err), "successful backup should not be retried")
-
-	if !assert.FileExists(t, "retry_b.out") {
-		return
-	}
-	outputFile, err := os.Open("retry_b.out")
-	assert.NoError(t, err)
-	defer outputFile.Close()
-	byteValue, _ := io.ReadAll(outputFile)
-	assert.Equal(t, string(byteValue), wantedMsg+"\n")
-}
-
-func TestRetrieveUrlsBroken(t *testing.T) {
-	testutil.UseTempDir(t)
-	wantedMsg := "aiK8eephiT"
-	oldMsg := "old"
-
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, err := w.Write([]byte("Internal Server Error"))
-		assert.NoError(t, err)
-	}))
-	defer ts.Close()
-
-	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
-
-	err := os.WriteFile(outputFilename, []byte(oldMsg), 0600)
-	assert.NoError(t, err)
-
-	cfg, err := config.New(configurationFilename, 9289)
-	assert.NoError(t, err)
-	reg := prometheus.NewRegistry()
-	m := NewMetrics(reg, cfg.MetricsPrefix)
-
-	status := newBackupStatus(cfg.Backups)
-	r := retrieveUrls(t.Context(), cfg, m, status, true)
-	assert.FileExists(t, outputFilename)
-
-	assert.False(t, r)
-
-	outputFile, err := os.Open(outputFilename)
-	if !assert.NoError(t, err) {
-		return
-	}
-	defer outputFile.Close()
-
-	byteValue, _ := io.ReadAll(outputFile)
-	assert.Equal(t, string(byteValue), oldMsg)
 }
 
 func TestInitializeCounters(t *testing.T) {
@@ -217,100 +227,177 @@ func TestInitializeCounters(t *testing.T) {
 	assert.NotEmpty(t, families)
 }
 
-func TestBackupFile_InvalidURL(t *testing.T) {
-	_, err := backupFile(t.Context(), "test", "://invalid", "", "", "test.out", 10*time.Second)
-	assert.Error(t, err)
+func TestBackupFile(t *testing.T) {
+	tests := []struct {
+		name         string
+		setup        func(t *testing.T) (string, func())
+		url          string
+		outputFile   string
+		timeout      time.Duration
+		wantErr      bool
+		checkErr     func(t *testing.T, err error)
+		checkContent string
+	}{
+		{
+			name: "invalid URL",
+			setup: func(_ *testing.T) (string, func()) {
+				return "", func() {}
+			},
+			url:        "://invalid",
+			outputFile: testOutputFile,
+			timeout:    10 * time.Second,
+			wantErr:    true,
+			checkErr: func(t *testing.T, err error) {
+				var target *httpError
+				assert.ErrorAs(t, err, &target)
+			},
+		},
+		{
+			name: "HTTP do error (connection refused)",
+			setup: func(_ *testing.T) (string, func()) {
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					fmt.Fprintln(w, "test")
+				}))
+				url := ts.URL
+				ts.Close()
+				return url, func() {}
+			},
+			url:        "",
+			outputFile: testOutputFile,
+			timeout:    10 * time.Second,
+			wantErr:    true,
+			checkErr: func(t *testing.T, err error) {
+				var target *httpError
+				assert.ErrorAs(t, err, &target)
+			},
+		},
+		{
+			name: "create file error (nonexistent directory)",
+			setup: func(t *testing.T) (string, func()) {
+				testutil.UseTempDir(t)
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					fmt.Fprintln(w, "test")
+				}))
+				return ts.URL, func() { ts.Close() }
+			},
+			url:        "",
+			outputFile: "nonexistent_dir/file.out",
+			timeout:    10 * time.Second,
+			wantErr:    true,
+			checkErr: func(t *testing.T, err error) {
+				var target *fsError
+				assert.ErrorAs(t, err, &target)
+			},
+		},
+		{
+			name: "copy error (write to /dev/full)",
+			setup: func(t *testing.T) (string, func()) {
+				testutil.UseTempDir(t)
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					fmt.Fprintln(w, "test")
+				}))
+				err := os.Symlink("/dev/full", "test.out.part")
+				require.NoError(t, err)
+				return ts.URL, func() { ts.Close() }
+			},
+			url:        "",
+			outputFile: testOutputFile,
+			timeout:    10 * time.Second,
+			wantErr:    true,
+			checkErr: func(t *testing.T, err error) {
+				var target *fsError
+				assert.ErrorAs(t, err, &target)
+			},
+		},
+		{
+			name: "timeout exceeded",
+			setup: func(t *testing.T) (string, func()) {
+				testutil.UseTempDir(t)
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					time.Sleep(500 * time.Millisecond)
+					fmt.Fprintln(w, "test")
+				}))
+				return ts.URL, func() { ts.Close() }
+			},
+			url:        "",
+			outputFile: testOutputFile,
+			timeout:    100 * time.Millisecond,
+			wantErr:    true,
+			checkErr: func(t *testing.T, err error) {
+				var target *httpError
+				assert.ErrorAs(t, err, &target)
+			},
+		},
+		{
+			name: "successful backup",
+			setup: func(t *testing.T) (string, func()) {
+				testutil.UseTempDir(t)
+				testContent := "Hello, World!"
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					fmt.Fprint(w, testContent)
+				}))
+				return ts.URL, func() { ts.Close() }
+			},
+			url:          "",
+			outputFile:   testOutputFile,
+			timeout:      10 * time.Second,
+			wantErr:      false,
+			checkContent: "Hello, World!",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url, cleanup := tt.setup(t)
+			defer cleanup()
+			if tt.url != "" {
+				url = tt.url
+			}
 
-	var target *httpError
-	assert.True(t, errors.As(err, &target))
+			size, err := backupFile(t.Context(), "test", url, "", "", tt.outputFile, tt.timeout)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.checkErr != nil {
+					tt.checkErr(t, err)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, int64(len(tt.checkContent)), size)
+				content, err := os.ReadFile(tt.outputFile)
+				assert.NoError(t, err)
+				assert.Equal(t, tt.checkContent, string(content))
+			}
+		})
+	}
 }
 
-func TestBackupFile_HTTPDoError(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintln(w, "test")
-	}))
-	ts.Close()
-
-	_, err := backupFile(t.Context(), "test", ts.URL, "", "", "test.out", 10*time.Second)
-
-	assert.Error(t, err)
-	var target *httpError
-	assert.True(t, errors.As(err, &target))
-}
-
-func TestBackupFile_CreateFileError(t *testing.T) {
-	testutil.UseTempDir(t)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintln(w, "test")
-	}))
-	defer ts.Close()
-
-	_, err := backupFile(t.Context(), "test", ts.URL, "", "", "nonexistent_dir/file.out", 10*time.Second)
-
-	assert.Error(t, err)
-	var target *fsError
-	assert.True(t, errors.As(err, &target))
-}
-
-func TestBackupFile_CopyError(t *testing.T) {
-	testutil.UseTempDir(t)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintln(w, "test")
-	}))
-	defer ts.Close()
-
-	err := os.Symlink("/dev/full", "test.out.part")
-	assert.NoError(t, err)
-
-	_, err = backupFile(t.Context(), "test", ts.URL, "", "", "test.out", 10*time.Second)
-
-	assert.Error(t, err)
-	var target *fsError
-	assert.True(t, errors.As(err, &target))
-}
-
-func TestBackupFile_TimeoutExceeded(t *testing.T) {
-	testutil.UseTempDir(t)
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(500 * time.Millisecond)
-		fmt.Fprintln(w, "test")
-	}))
-	defer ts.Close()
-
-	_, err := backupFile(t.Context(), "test", ts.URL, "", "", "test.out", 100*time.Millisecond)
-
-	assert.Error(t, err)
-	var target *httpError
-	assert.True(t, errors.As(err, &target))
-}
-
-func TestBackupFile_SuccessfulBackup(t *testing.T) {
-	testutil.UseTempDir(t)
-	testContent := "Hello, World!"
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, testContent)
-	}))
-	defer ts.Close()
-
-	size, err := backupFile(t.Context(), "test", ts.URL, "", "", "test.out", 10*time.Second)
-
-	assert.NoError(t, err)
-	assert.Equal(t, int64(len(testContent)), size)
-	content, err := os.ReadFile("test.out")
-	assert.NoError(t, err)
-	assert.Equal(t, testContent, string(content))
-}
-
-func TestHTTPError_Unwrap(t *testing.T) {
-	inner := errors.New("inner")
-	err := &httpError{error: inner}
-	assert.Equal(t, inner, errors.Unwrap(err))
-}
-
-func TestFSError_Unwrap(t *testing.T) {
-	inner := errors.New("inner")
-	err := &fsError{error: inner}
-	assert.Equal(t, inner, errors.Unwrap(err))
+func TestHTTPErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{
+			name: "httpError unwrap",
+			run: func(t *testing.T) {
+				inner := errors.New("inner")
+				err := &httpError{error: inner}
+				assert.Equal(t, inner, errors.Unwrap(err))
+			},
+		},
+		{
+			name: "fsError unwrap",
+			run: func(t *testing.T) {
+				inner := errors.New("inner")
+				err := &fsError{error: inner}
+				assert.Equal(t, inner, errors.Unwrap(err))
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run(t)
+		})
+	}
 }
 
 func TestRecordBackupFailed(t *testing.T) {
@@ -795,7 +882,7 @@ func TestBackupFile_BodyCloseError(t *testing.T) {
 	}
 	t.Cleanup(func() { newClient = origNewClient })
 
-	_, err := backupFile(t.Context(), "test", "http://example.com", "", "", "test.out", 10*time.Second)
+	_, err := backupFile(t.Context(), "test", "http://example.com", "", "", testOutputFile, 10*time.Second)
 	assert.NoError(t, err)
-	assert.FileExists(t, "test.out")
+	assert.FileExists(t, testOutputFile)
 }

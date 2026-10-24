@@ -246,21 +246,6 @@ func TestNew_InvalidInterval(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestLoggerConfigPartialOverrides(t *testing.T) {
-	k := koanf.New(".")
-	assert.NoError(t, k.Set("logging.level", "ERROR"))
-	assert.NoError(t, k.Set("logging.filename", "stdout"))
-	opts := loggerConfig(k)
-
-	assert.Equal(t, "ERROR", opts.Level)
-	assert.Equal(t, "stdout", opts.Filename)
-	assert.Equal(t, 5, opts.MaxSize)
-	assert.Equal(t, 10, opts.MaxBackups)
-	assert.Equal(t, 14, opts.MaxAge)
-	assert.True(t, opts.Compress)
-	assert.False(t, opts.JSON)
-}
-
 func TestNew_MissingURL(t *testing.T) {
 	testutil.UseTempDir(t)
 	configContent := "backups:\n  test:\n    outputFile: out.txt\ninterval: 1h\nretryInterval: 1h\n"

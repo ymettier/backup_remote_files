@@ -13,6 +13,7 @@ import (
 )
 
 func TestUseTempDir(t *testing.T) {
+	t.Parallel()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
 
@@ -25,6 +26,7 @@ func TestUseTempDir(t *testing.T) {
 }
 
 func TestUseTempDir_RestoresOriginal(t *testing.T) {
+	t.Parallel()
 	originalDir, err := os.Getwd()
 	require.NoError(t, err)
 

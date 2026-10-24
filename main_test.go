@@ -563,7 +563,8 @@ func TestRun_ServesMetrics(t *testing.T) {
 
 	cancel()
 	select {
-	case <-errCh:
+	case err := <-errCh:
+		assert.NoError(t, err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("run() did not return after cancellation")
 	}
@@ -768,7 +769,8 @@ func TestRunBackupLoop_Retry(t *testing.T) {
 
 	cancel()
 	select {
-	case <-errCh:
+	case err := <-errCh:
+		assert.NoError(t, err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("run() did not return after cancellation")
 	}

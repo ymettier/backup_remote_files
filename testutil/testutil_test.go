@@ -7,51 +7,40 @@ import (
 	"errors"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUseTempDir(t *testing.T) {
 	originalDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	UseTempDir(t)
 
 	newDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if newDir == originalDir {
-		t.Error("UseTempDir did not change the working directory")
-	}
+	assert.NotEqual(t, newDir, originalDir)
 }
 
 func TestUseTempDir_RestoresOriginal(t *testing.T) {
 	originalDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	t.Run("sub", func(t *testing.T) {
 		UseTempDir(t)
 	})
 
 	restoredDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if restoredDir != originalDir {
-		t.Errorf("working directory was not restored: got %q, want %q", restoredDir, originalDir)
-	}
+	assert.Equal(t, originalDir, restoredDir)
 }
 
 func TestUseTempDir_CleanupLog(t *testing.T) {
 	originalDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	t.Run("sub", func(t *testing.T) {
 		UseTempDir(t)
@@ -60,13 +49,9 @@ func TestUseTempDir_CleanupLog(t *testing.T) {
 	})
 
 	restoredDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	if restoredDir != originalDir {
-		t.Errorf("working directory was not restored: got %q, want %q", restoredDir, originalDir)
-	}
+	assert.Equal(t, originalDir, restoredDir)
 }
 
 func TestUseTempDir_ErrorGetwd(t *testing.T) {

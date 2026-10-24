@@ -117,7 +117,10 @@ and exports Prometheus metrics for monitoring backup status and health.
 
 ### Testing Conventions
 - Write tests alongside features in `*_test.go` files
+- All Go test files (`*_test.go`) must use testify for assertions
 - Use testify assertions (`assert.Equal`, `assert.Nil`, `assert.FileExists`)
+- Prefer table-driven tests (lists of test cases) over repetitive individual test functions
+  when the same logic is exercised with different inputs or expected outcomes
 - Tests should be isolated and use temporary files/directories
 - Always clean up test artifacts with defer
 - Test data files must be placed in the `testdata/` directory

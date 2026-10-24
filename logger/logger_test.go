@@ -6,12 +6,14 @@ package logger
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"backup_remote_files/testutil"
 )
@@ -89,21 +91,41 @@ func TestGetOtherJsonLogFile(t *testing.T) {
 
 func TestLogLevel(t *testing.T) {
 	tests := []struct {
-		name string
-		env  string
+		name      string
+		opts      *LogOptions
+		env       string
+		wantDebug bool
+		wantInfo  bool
 	}{
 		{
-			name: "debug enabled",
-			env:  "DEBUG",
+			name:      "debug enabled via env",
+			env:       "DEBUG",
+			wantDebug: true,
+			wantInfo:  true,
+		},
+		{
+			name:      "debug enabled via opts",
+			opts:      &LogOptions{Level: "DEBUG"},
+			wantDebug: true,
+			wantInfo:  true,
+		},
+		{
+			name:      "invalid level defaults to info",
+			env:       "BOGUS",
+			wantDebug: false,
+			wantInfo:  true,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			os.Setenv("BRF_LOG_LEVEL", tt.env)
-			defer os.Unsetenv("BRF_LOG_LEVEL")
+			if tt.env != "" {
+				os.Setenv("BRF_LOG_LEVEL", tt.env)
+				defer os.Unsetenv("BRF_LOG_LEVEL")
+			}
 
-			l := newLogger(nil)
-			assert.True(t, l.Enabled(t.Context(), -4))
+			l := newLogger(tt.opts)
+			assert.Equal(t, tt.wantDebug, l.Enabled(t.Context(), slog.LevelDebug))
+			assert.Equal(t, tt.wantInfo, l.Enabled(t.Context(), slog.LevelInfo))
 		})
 	}
 }
@@ -126,6 +148,13 @@ func TestGetWriter(t *testing.T) {
 		{
 			name:     "file with zero rotation values",
 			opts:     &LogOptions{Filename: "lumberjack_defaults.log", MaxSize: 0, MaxBackups: 0, MaxAge: 0, Compress: false},
+			wantNil:  false,
+			wantFile: true,
+			useTmp:   true,
+		},
+		{
+			name:     "file with custom rotation values",
+			opts:     &LogOptions{Filename: "lumberjack_custom.log", MaxSize: 50, MaxBackups: 5, MaxAge: 7, Compress: true},
 			wantNil:  false,
 			wantFile: true,
 			useTmp:   true,
@@ -175,6 +204,70 @@ func TestGetWriter(t *testing.T) {
 				_, err := w.Write([]byte("test"))
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestGetAndReset(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{
+			name: "singleton returns same instance",
+			run: func(t *testing.T) {
+				resetGlobal()
+				l1 := Get()
+				require.NotNil(t, l1)
+				l2 := Get()
+				assert.Same(t, l1, l2)
+			},
+		},
+		{
+			name: "reset replaces instance",
+			run: func(t *testing.T) {
+				resetGlobal()
+				l1 := Get()
+				require.NotNil(t, l1)
+				Reset(&LogOptions{Filename: "stderr", JSON: true})
+				l2 := Get()
+				assert.NotSame(t, l1, l2)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run(t)
+		})
+	}
+}
+
+func TestContextLogger(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{
+			name: "with context and from context roundtrip",
+			run: func(t *testing.T) {
+				l := newLogger(nil)
+				ctx := WithCtx(t.Context(), l)
+				extracted := FromCtx(ctx)
+				assert.Same(t, l, extracted)
+			},
+		},
+		{
+			name: "from context defaults to global logger",
+			run: func(t *testing.T) {
+				resetGlobal()
+				extracted := FromCtx(t.Context())
+				assert.NotNil(t, extracted)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run(t)
 		})
 	}
 }

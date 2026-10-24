@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"backup_remote_files/logger"
 	"backup_remote_files/testutil"
 )
 
@@ -58,37 +59,78 @@ metricsPrefix: "default_prefix"
 	assert.Equal(t, "custom_prefix", cfg.MetricsPrefix)
 }
 
-func TestLoggerConfigDefaults(t *testing.T) {
-	k := koanf.New(".")
-	opts := loggerConfig(k)
-
-	assert.Equal(t, "INFO", opts.Level)
-	assert.Equal(t, "", opts.Filename)
-	assert.Equal(t, 5, opts.MaxSize)
-	assert.Equal(t, 10, opts.MaxBackups)
-	assert.Equal(t, 14, opts.MaxAge)
-	assert.True(t, opts.Compress)
-	assert.False(t, opts.JSON)
-}
-
-func TestLoggerConfigOverrides(t *testing.T) {
-	k := koanf.New(".")
-	assert.NoError(t, k.Set("logging.level", "DEBUG"))
-	assert.NoError(t, k.Set("logging.filename", "/var/log/test.log"))
-	assert.NoError(t, k.Set("logging.maxSize", 50))
-	assert.NoError(t, k.Set("logging.maxBackups", 20))
-	assert.NoError(t, k.Set("logging.maxAge", 30))
-	assert.NoError(t, k.Set("logging.compress", false))
-	assert.NoError(t, k.Set("logging.json", true))
-	opts := loggerConfig(k)
-
-	assert.Equal(t, "DEBUG", opts.Level)
-	assert.Equal(t, "/var/log/test.log", opts.Filename)
-	assert.Equal(t, 50, opts.MaxSize)
-	assert.Equal(t, 20, opts.MaxBackups)
-	assert.Equal(t, 30, opts.MaxAge)
-	assert.False(t, opts.Compress)
-	assert.True(t, opts.JSON)
+func TestLoggerConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func(*koanf.Koanf)
+		want     logger.LogOptions
+		wantJSON bool
+	}{
+		{
+			name:  "defaults",
+			setup: func(*koanf.Koanf) {},
+			want: logger.LogOptions{
+				Level:      "INFO",
+				Filename:   "",
+				MaxSize:    5,
+				MaxBackups: 10,
+				MaxAge:     14,
+				Compress:   true,
+				JSON:       false,
+			},
+		},
+		{
+			name: "overrides",
+			setup: func(k *koanf.Koanf) {
+				require.NoError(t, k.Set("logging.level", "DEBUG"))
+				require.NoError(t, k.Set("logging.filename", "/var/log/test.log"))
+				require.NoError(t, k.Set("logging.maxSize", 50))
+				require.NoError(t, k.Set("logging.maxBackups", 20))
+				require.NoError(t, k.Set("logging.maxAge", 30))
+				require.NoError(t, k.Set("logging.compress", false))
+				require.NoError(t, k.Set("logging.json", true))
+			},
+			want: logger.LogOptions{
+				Level:      "DEBUG",
+				Filename:   "/var/log/test.log",
+				MaxSize:    50,
+				MaxBackups: 20,
+				MaxAge:     30,
+				Compress:   false,
+				JSON:       true,
+			},
+		},
+		{
+			name: "partial overrides",
+			setup: func(k *koanf.Koanf) {
+				require.NoError(t, k.Set("logging.level", "ERROR"))
+				require.NoError(t, k.Set("logging.filename", "stdout"))
+			},
+			want: logger.LogOptions{
+				Level:      "ERROR",
+				Filename:   "stdout",
+				MaxSize:    5,
+				MaxBackups: 10,
+				MaxAge:     14,
+				Compress:   true,
+				JSON:       false,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			k := koanf.New(".")
+			tt.setup(k)
+			opts := loggerConfig(k)
+			assert.Equal(t, tt.want.Level, opts.Level)
+			assert.Equal(t, tt.want.Filename, opts.Filename)
+			assert.Equal(t, tt.want.MaxSize, opts.MaxSize)
+			assert.Equal(t, tt.want.MaxBackups, opts.MaxBackups)
+			assert.Equal(t, tt.want.MaxAge, opts.MaxAge)
+			assert.Equal(t, tt.want.Compress, opts.Compress)
+			assert.Equal(t, tt.want.JSON, opts.JSON)
+		})
+	}
 }
 
 func TestParseFlags_Success(t *testing.T) {
@@ -202,21 +244,6 @@ func TestNew_InvalidInterval(t *testing.T) {
 
 	_, err = New("bad_interval.yaml", 8080)
 	assert.Error(t, err)
-}
-
-func TestLoggerConfigPartialOverrides(t *testing.T) {
-	k := koanf.New(".")
-	assert.NoError(t, k.Set("logging.level", "ERROR"))
-	assert.NoError(t, k.Set("logging.filename", "stdout"))
-	opts := loggerConfig(k)
-
-	assert.Equal(t, "ERROR", opts.Level)
-	assert.Equal(t, "stdout", opts.Filename)
-	assert.Equal(t, 5, opts.MaxSize)
-	assert.Equal(t, 10, opts.MaxBackups)
-	assert.Equal(t, 14, opts.MaxAge)
-	assert.True(t, opts.Compress)
-	assert.False(t, opts.JSON)
 }
 
 func TestNew_MissingURL(t *testing.T) {

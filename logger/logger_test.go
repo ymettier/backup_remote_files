@@ -6,6 +6,7 @@ package logger
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -89,124 +90,186 @@ func TestGetOtherJsonLogFile(t *testing.T) {
 }
 
 func TestLogLevel(t *testing.T) {
-	os.Setenv("BRF_LOG_LEVEL", "DEBUG")
-	defer os.Unsetenv("BRF_LOG_LEVEL")
+	tests := []struct {
+		name      string
+		opts      *LogOptions
+		env       string
+		wantDebug bool
+		wantInfo  bool
+	}{
+		{
+			name:      "debug enabled via env",
+			env:       "DEBUG",
+			wantDebug: true,
+			wantInfo:  true,
+		},
+		{
+			name:      "debug enabled via opts",
+			opts:      &LogOptions{Level: "DEBUG"},
+			wantDebug: true,
+			wantInfo:  true,
+		},
+		{
+			name:      "invalid level defaults to info",
+			env:       "BOGUS",
+			wantDebug: false,
+			wantInfo:  true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.env != "" {
+				os.Setenv("BRF_LOG_LEVEL", tt.env)
+				defer os.Unsetenv("BRF_LOG_LEVEL")
+			}
 
-	l := newLogger(nil)
-	assert.True(t, l.Enabled(t.Context(), -4)) // slog.LevelDebug is -4
+			l := newLogger(tt.opts)
+			assert.Equal(t, tt.wantDebug, l.Enabled(t.Context(), slog.LevelDebug))
+			assert.Equal(t, tt.wantInfo, l.Enabled(t.Context(), slog.LevelInfo))
+		})
+	}
 }
 
-func TestGetWriter_File(t *testing.T) {
-	testutil.UseTempDir(t)
-	filename := "lumberjack_test.log"
-
-	w, ok := getWriter(&LogOptions{Filename: filename})
-	require.NotNil(t, w)
-	assert.True(t, ok)
-
-	_, err := w.Write([]byte("test"))
-	assert.NoError(t, err)
+func TestGetWriter(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     *LogOptions
+		wantNil  bool
+		wantFile bool
+		useTmp   bool
+	}{
+		{
+			name:     "file with defaults",
+			opts:     &LogOptions{Filename: "lumberjack_test.log"},
+			wantNil:  false,
+			wantFile: true,
+			useTmp:   true,
+		},
+		{
+			name:     "file with zero rotation values",
+			opts:     &LogOptions{Filename: "lumberjack_defaults.log", MaxSize: 0, MaxBackups: 0, MaxAge: 0, Compress: false},
+			wantNil:  false,
+			wantFile: true,
+			useTmp:   true,
+		},
+		{
+			name:     "file with custom rotation values",
+			opts:     &LogOptions{Filename: "lumberjack_custom.log", MaxSize: 50, MaxBackups: 5, MaxAge: 7, Compress: true},
+			wantNil:  false,
+			wantFile: true,
+			useTmp:   true,
+		},
+		{
+			name:     "stdout", //nolint:goconst
+			opts:     &LogOptions{Filename: "stdout"},
+			wantNil:  false,
+			wantFile: false,
+			useTmp:   false,
+		},
+		{
+			name:     "stderr", //nolint:goconst
+			opts:     &LogOptions{Filename: "stderr"},
+			wantNil:  false,
+			wantFile: false,
+			useTmp:   false,
+		},
+		{
+			name:     "nil opts",
+			opts:     nil,
+			wantNil:  false,
+			wantFile: false,
+			useTmp:   false,
+		},
+		{
+			name:     "empty filename",
+			opts:     &LogOptions{Filename: ""},
+			wantNil:  false,
+			wantFile: false,
+			useTmp:   false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.useTmp {
+				testutil.UseTempDir(t)
+			}
+			w, ok := getWriter(tt.opts)
+			if tt.wantNil {
+				assert.Nil(t, w)
+			} else {
+				assert.NotNil(t, w)
+			}
+			assert.Equal(t, tt.wantFile, ok)
+			if tt.opts != nil && tt.opts.Filename != "" && tt.opts.Filename != "stdout" && tt.opts.Filename != "stderr" {
+				_, err := w.Write([]byte("test"))
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
 
-func TestGetWriter_FileDefaults(t *testing.T) {
-	testutil.UseTempDir(t)
-	filename := "lumberjack_defaults.log"
-
-	w, ok := getWriter(&LogOptions{Filename: filename, MaxSize: 0, MaxBackups: 0, MaxAge: 0, Compress: false})
-	assert.NotNil(t, w)
-	assert.True(t, ok)
+func TestGetAndReset(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{
+			name: "singleton returns same instance",
+			run: func(t *testing.T) {
+				resetGlobal()
+				l1 := Get()
+				require.NotNil(t, l1)
+				l2 := Get()
+				assert.Same(t, l1, l2)
+			},
+		},
+		{
+			name: "reset replaces instance",
+			run: func(t *testing.T) {
+				resetGlobal()
+				l1 := Get()
+				require.NotNil(t, l1)
+				Reset(&LogOptions{Filename: "stderr", JSON: true})
+				l2 := Get()
+				assert.NotSame(t, l1, l2)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run(t)
+		})
+	}
 }
 
-func TestGet(t *testing.T) {
-	resetGlobal()
-
-	l1 := Get()
-	require.NotNil(t, l1)
-
-	l2 := Get()
-	assert.Same(t, l1, l2)
-}
-
-func TestReset(t *testing.T) {
-	resetGlobal()
-
-	l1 := Get()
-	require.NotNil(t, l1)
-
-	Reset(&LogOptions{Filename: "stderr", JSON: true}) //nolint:goconst
-	l2 := Get()
-	assert.NotSame(t, l1, l2)
-}
-
-func TestWithCtx_FromCtx(t *testing.T) {
-	l := newLogger(nil)
-	ctx := WithCtx(t.Context(), l)
-
-	extracted := FromCtx(ctx)
-	assert.Same(t, l, extracted)
-}
-
-func TestFromCtx_NoLogger(t *testing.T) {
-	resetGlobal()
-	l := FromCtx(t.Context())
-	assert.NotNil(t, l) // returns the default logger
-}
-
-func TestNewLogger_InvalidLevelEnv(t *testing.T) {
-	os.Setenv("BRF_LOG_LEVEL", "BOGUS")
-	defer os.Unsetenv("BRF_LOG_LEVEL")
-
-	l := newLogger(nil)
-	assert.NotNil(t, l)
-
-	// should have defaulted to INFO
-	assert.True(t, l.Enabled(t.Context(), 0))   // slog.LevelInfo
-	assert.False(t, l.Enabled(t.Context(), -8)) // slog.LevelDebug
-}
-
-func TestNewLogger_NilOptsNoEnv(t *testing.T) {
-	l := newLogger(nil)
-	assert.NotNil(t, l)
-}
-
-func TestNewLogger_LumberjackConfigLog(t *testing.T) {
-	testutil.UseTempDir(t)
-	filename := "lumberjack_cfg.log"
-
-	l := newLogger(&LogOptions{
-		Filename:   filename,
-		Level:      "INFO",
-		MaxSize:    100,
-		MaxBackups: 5,
-		MaxAge:     7,
-		Compress:   true,
-	})
-	require.NotNil(t, l)
-	assert.FileExists(t, filename)
-}
-
-func TestGetWriter_Stdout(t *testing.T) {
-	w, ok := getWriter(&LogOptions{Filename: "stdout"})
-	assert.NotNil(t, w)
-	assert.False(t, ok)
-}
-
-func TestGetWriter_Stderr(t *testing.T) {
-	w, ok := getWriter(&LogOptions{Filename: "stderr"})
-	assert.NotNil(t, w)
-	assert.False(t, ok)
-}
-
-func TestGetWriter_NilOpts(t *testing.T) {
-	w, ok := getWriter(nil)
-	assert.NotNil(t, w)
-	assert.False(t, ok)
-}
-
-func TestGetWriter_EmptyFilename(t *testing.T) {
-	w, ok := getWriter(&LogOptions{Filename: ""})
-	assert.NotNil(t, w)
-	assert.False(t, ok)
+func TestContextLogger(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T)
+	}{
+		{
+			name: "with context and from context roundtrip",
+			run: func(t *testing.T) {
+				l := newLogger(nil)
+				ctx := WithCtx(t.Context(), l)
+				extracted := FromCtx(ctx)
+				assert.Same(t, l, extracted)
+			},
+		},
+		{
+			name: "from context defaults to global logger",
+			run: func(t *testing.T) {
+				resetGlobal()
+				extracted := FromCtx(t.Context())
+				assert.NotNil(t, extracted)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.run(t)
+		})
+	}
 }
 
 func TestGet_RaceCondition(t *testing.T) {

@@ -117,7 +117,10 @@ and exports Prometheus metrics for monitoring backup status and health.
 
 ### Testing Conventions
 - Write tests alongside features in `*_test.go` files
+- All Go test files (`*_test.go`) must use testify for assertions
 - Use testify assertions (`assert.Equal`, `assert.Nil`, `assert.FileExists`)
+- Prefer table-driven tests (lists of test cases) over repetitive individual test functions
+  when the same logic is exercised with different inputs or expected outcomes
 - Tests should be isolated and use temporary files/directories
 - Always clean up test artifacts with defer
 - Test data files must be placed in the `testdata/` directory
@@ -190,11 +193,11 @@ This approach avoids the complexity of maintaining connection pools while still 
 ## Linting
 - Run: `golangci-lint run ./...`
 - Fallback (version mismatch):
-  `docker run -t --rm -v $(pwd):/app:z -w /app golangci/golangci-lint:v2.12.2 golangci-lint run ./...`
+  `docker run -t --rm -v $(pwd):/app:z -w /app golangci/golangci-lint:v2.15.0 golangci-lint run ./...`
 
 ## Version Management
 - Keep Go version in `Dockerfile` and `.github/workflows/*.yml` in sync.
-  Use the latest patch release (e.g., `1.26.5` not `1.26` or `stable`).
+  Use the latest patch release (e.g., `1.27.3` not `1.27` or `stable`).
 - `go.mod` is the exception: its `go` directive sets the minimum Go version. Only bump when the code requires a newer toolchain feature.
 - Keep all tooling in `.github/workflows/` (goreleaser, golangci-lint, actions/\*) at their latest stable versions.
 - When updating a version, check all references across the project (go.mod, Dockerfile, workflows, AGENTS.md).

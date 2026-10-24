@@ -28,7 +28,8 @@ import (
 
 const programName = "./backup_remote_files"
 
-func createConfigFile(key, url string) (configurationFilename, outputFilename string, err error) {
+func createConfigFile(t *testing.T, key, url string) (configurationFilename, outputFilename string) {
+	t.Helper()
 	configurationFilename = "config." + key + ".yaml"
 	outputFilename = key + ".out"
 
@@ -47,11 +48,9 @@ func createConfigFile(key, url string) (configurationFilename, outputFilename st
 		url,
 		outputFilename,
 	)
-	err = os.WriteFile(configurationFilename, []byte(configContent), 0600)
-	if err != nil {
-		return "", "", err
-	}
-	return configurationFilename, outputFilename, nil
+	err := os.WriteFile(configurationFilename, []byte(configContent), 0600)
+	require.NoError(t, err)
+	return configurationFilename, outputFilename
 }
 
 func TestRetrieveUrls_TargetIsDirectory(t *testing.T) {
@@ -63,10 +62,9 @@ func TestRetrieveUrls_TargetIsDirectory(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.NoError(t, err)
+	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
 
-	err = os.Mkdir(outputFilename, 0750)
+	err := os.Mkdir(outputFilename, 0750)
 	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
@@ -90,8 +88,7 @@ func TestRetrieveUrlsSimple(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.NoError(t, err)
+	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
 
 	cfg, err := config.New(configurationFilename, 9289)
 	assert.NoError(t, err)
@@ -184,10 +181,9 @@ func TestRetrieveUrlsBroken(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.NoError(t, err)
+	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
 
-	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
+	err := os.WriteFile(outputFilename, []byte(oldMsg), 0600)
 	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
@@ -369,8 +365,7 @@ func TestMetricsValues(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.NoError(t, err)
+	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
 
 	cfg, err := config.New(configurationFilename, 9289)
 	assert.NoError(t, err)
@@ -415,10 +410,9 @@ func TestMetricsValues_BrokenServer(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	configurationFilename, outputFilename, err := createConfigFile(wantedMsg, ts.URL)
-	assert.NoError(t, err)
+	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
 
-	err = os.WriteFile(outputFilename, []byte(oldMsg), 0600)
+	err := os.WriteFile(outputFilename, []byte(oldMsg), 0600)
 	assert.NoError(t, err)
 
 	cfg, err := config.New(configurationFilename, 9289)
@@ -460,8 +454,7 @@ func TestMetricsValues_RenameBlockedByDirectory(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	configurationFilename, _, err := createConfigFile(wantedMsg, ts.URL)
-	assert.NoError(t, err)
+	configurationFilename, _ := createConfigFile(t, wantedMsg, ts.URL)
 
 	cfg, err := config.New(configurationFilename, 9289)
 	assert.NoError(t, err)
@@ -566,7 +559,7 @@ func TestRun_ServesMetrics(t *testing.T) {
 	case err := <-errCh:
 		assert.NoError(t, err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("run() did not return after cancellation")
+		require.Fail(t, "run() did not return after cancellation")
 	}
 }
 
@@ -613,7 +606,7 @@ func TestStartMetricsServer_PortConflict(t *testing.T) {
 	case err := <-errCh:
 		assert.Error(t, err)
 	case <-time.After(2 * time.Second):
-		t.Fatal("startMetricsServer did not return an error")
+		require.Fail(t, "startMetricsServer did not return an error")
 	}
 }
 
@@ -772,7 +765,7 @@ func TestRunBackupLoop_Retry(t *testing.T) {
 	case err := <-errCh:
 		assert.NoError(t, err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("run() did not return after cancellation")
+		require.Fail(t, "run() did not return after cancellation")
 	}
 }
 

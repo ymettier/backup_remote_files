@@ -60,7 +60,7 @@ func TestUseTempDir_ErrorGetwd(t *testing.T) {
 	t.Cleanup(func() { getwd = origGetwd })
 
 	if err := useTempDir(t); err == nil {
-		t.Error("expected error when getwd fails")
+		assert.Fail(t, "expected error when getwd fails")
 	}
 }
 
@@ -70,7 +70,7 @@ func TestUseTempDir_ErrorChdir(t *testing.T) {
 	t.Cleanup(func() { chdir = origChdir })
 
 	if err := useTempDir(t); err == nil {
-		t.Error("expected error when chdir fails")
+		assert.Fail(t, "expected error when chdir fails")
 	}
 }
 
@@ -109,6 +109,6 @@ func TestUseTempDir_Fatal(t *testing.T) {
 	ft := &fakeTB{TB: t}
 	UseTempDir(ft)
 	if !ft.fatalCalled {
-		t.Error("expected UseTempDir to call Fatal when useTempDir returns an error")
+		assert.Fail(t, "expected UseTempDir to call Fatal when useTempDir returns an error")
 	}
 }

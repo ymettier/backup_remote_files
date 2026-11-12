@@ -23,8 +23,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"backup_remote_files/config"
-	"backup_remote_files/logger"
+	"backup_remote_files/internal/config"
+	"backup_remote_files/internal/logger"
 )
 
 var (

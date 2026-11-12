@@ -29,12 +29,17 @@ and exports Prometheus metrics for monitoring backup status and health.
 │       ├── main.go      # Application entry point and metrics collection
 │       ├── main_test.go # Integration tests
 │       └── version.txt  # Build version (embedded)
-├── config/
-│   ├── config.default.yaml  # Default/example configuration
-│   ├── config.go            # Configuration parsing and CLI flags
-│   └── config_test.go       # Configuration tests
-├── logger/          # Structured logging setup
-├── testutil/        # Test helpers
+├── internal/
+│   ├── config/
+│   │   ├── config.default.yaml  # Default/example configuration
+│   │   ├── config.go            # Configuration parsing and CLI flags
+│   │   └── config_test.go       # Configuration tests
+│   ├── logger/
+│   │   ├── logger.go            # Structured logging setup
+│   │   └── logger_test.go       # Logging tests
+│   └── testutil/
+│       ├── testutil.go          # Test helpers
+│       └── testutil_test.go     # Test helper tests
 ├── go.mod / go.sum  # Go modules
 ├── mise.toml        # Toolchain versions and development tasks
 └── Dockerfile       # Container image definition
@@ -42,7 +47,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 
 ## Key Components
 
-### Configuration (config/config.go)
+### Configuration (internal/config/config.go)
 - CLI flag parsing: `-c/--config` (required), `-p/--port` (overrides `exporter.port`, default 9289), `-V/--version`
 - Exporter configuration: `exporter.port` and `exporter.metricsPrefix`
 - Support for multiple backup definitions with URL, username, password, outputFile
@@ -53,7 +58,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Validate configuration values at startup
 - Support both short and long CLI flags
 - With Koanf, prefer getting typed values than using the Get() method.
-- Defaults are embedded from `config/config.default.yaml`; the user config file and `BRF_*` environment variables override them.
+- Defaults are embedded from `internal/config/config.default.yaml`; the user config file and `BRF_*` environment variables override them.
 
 ### Main Application (cmd/backup_remote_files/main.go)
 - Prometheus metrics registry for backup status tracking
@@ -98,7 +103,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Use optional environment variables for configuration (e.g., `BRF_BACKUP_DIR`...)
 - Environment variables should override values from the config file
 - Environment variable names should be in uppercase with underscores (e.g., `BRF_BACKUP_DIR`...)
-- Environment variables should be documented in the `config/config.default.yaml`
+- Environment variables should be documented in the `internal/config/config.default.yaml`
 - Environment variables should be prefixed with `BRF_` (e.g., `BRF_DIR`, `BRF_LOG_LEVEL`)
 
 ### Metrics
@@ -115,7 +120,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Gracefully handle missing or corrupted configuration
 - Configuration errors cause immediate exit with os.Exit(1)
 
-### Logging (logger/logger.go)
+### Logging (internal/logger/logger.go)
 - Structured logging using log/slog
 - File rotation via lumberjack.v2
 - Configurable levels: INFO, DEBUG, ERROR, WARN
@@ -147,10 +152,10 @@ This approach avoids the complexity of maintaining connection pools while still 
 ## Common Tasks
 
 ### Adding a New Configuration Option
-1. Add field to Config struct in config/config.go
+1. Add field to Config struct in internal/config/config.go
 2. Add parsing logic in readConfig() function
 3. Add test case in config_test.go
-4. Update config/config.default.yaml with the default value
+4. Update internal/config/config.default.yaml with the default value
 
 ### Adding a New Metric
 1. Define in metrics struct in cmd/backup_remote_files/main.go
@@ -159,7 +164,7 @@ This approach avoids the complexity of maintaining connection pools while still 
 4. Update metrics documentation comments
 
 ### Modifying CLI Flags
-1. Update parseFlags() in config/config.go
+1. Update parseFlags() in internal/config/config.go
 2. Add both short and long form support
 3. Update help text
 4. Test with -h flag

@@ -19,7 +19,7 @@ import (
 	"github.com/knadh/koanf/v2"
 	"github.com/spf13/pflag"
 
-	"backup_remote_files/logger"
+	"backup_remote_files/internal/logger"
 )
 
 const defaultPort = 9289

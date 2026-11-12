@@ -48,7 +48,7 @@ podman run --rm -it \
 
 ## Configuration
 
-See config/config.default.yaml for the default configuration. This file is embedded in the binary, and any value not set in your configuration file falls back to it.
+See internal/config/config.default.yaml for the default configuration. This file is embedded in the binary, and any value not set in your configuration file falls back to it.
 
 The `exporter` section controls the Prometheus exporter:
 - `exporter.port` (default `9289`); the `-p/--port` CLI flag overrides it.
@@ -60,7 +60,7 @@ Note: `logging.filename` can be set to one of `stdout`, `stderr` or a filename. 
 
 All environment variables are prefixed with `BRF_`.
 
-See config/config.default.yaml for a list of environment variables that can be used to override configuration values. Example:
+See internal/config/config.default.yaml for a list of environment variables that can be used to override configuration values. Example:
 
 - `BRF_LOGGING_LEVEL`: log level
 

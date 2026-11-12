@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"backup_remote_files/logger"
-	"backup_remote_files/testutil"
+	"backup_remote_files/internal/logger"
+	"backup_remote_files/internal/testutil"
 )
 
 func defaultKoanf(t *testing.T) *koanf.Koanf {

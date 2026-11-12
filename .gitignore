@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: MIT
 
 logs/*
+/bin/
 config.yaml
-backup_remote_files
+/backup_remote_files
 backup.log
 coverage*.out
 coverage.html

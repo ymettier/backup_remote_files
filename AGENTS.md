@@ -24,16 +24,18 @@ and exports Prometheus metrics for monitoring backup status and health.
 ├── .github/         # GitHub Actions workflows
 ├── .golangci.yml    # Linter configuration
 ├── .goreleaser.yaml # Release automation
+├── cmd/
+│   └── backup_remote_files/
+│       ├── main.go      # Application entry point and metrics collection
+│       ├── main_test.go # Integration tests
+│       └── version.txt  # Build version (embedded)
 ├── config/          # Configuration parsing and CLI flags
 ├── logger/          # Structured logging setup
 ├── testutil/        # Test helpers
-├── main.go          # Application entry point and metrics collection
-├── main_test.go     # Integration tests
 ├── go.mod / go.sum  # Go modules
 ├── mise.toml        # Toolchain versions and development tasks
 ├── Dockerfile       # Container image definition
-├── config.yaml.sample  # Example configuration
-└── version.txt      # Build version
+└── config.yaml.sample  # Example configuration
 ```
 
 ## Key Components
@@ -49,7 +51,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Support both short and long CLI flags
 - With Koanf, prefer getting typed values than using the Get() method.
 
-### Main Application (main.go)
+### Main Application (cmd/backup_remote_files/main.go)
 - Prometheus metrics registry for backup status tracking
 - Periodic backup retrieval with interval and retry intervals
 - HTTP server on configurable port serving /metrics endpoint
@@ -129,7 +131,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 
 ## HTTP Client Design
 
-The application creates a new HTTP client per request in `main.go`. This design is intentional and well-suited for this workload because:
+The application creates a new HTTP client per request in `cmd/backup_remote_files/main.go`. This design is intentional and well-suited for this workload because:
 
 1. **Periodic backups**: Backups typically run every 24 hours or so, so connection pooling benefits are minimal
 2. **Different hosts**: Each backup may target a different host, making a per-host pool impractical
@@ -147,7 +149,7 @@ This approach avoids the complexity of maintaining connection pools while still 
 4. Update config.yaml.sample with example value
 
 ### Adding a New Metric
-1. Define in metrics struct in main.go
+1. Define in metrics struct in cmd/backup_remote_files/main.go
 2. Register in NewMetrics() with NewGaugeVec/NewCounterVec
 3. Set/increment in appropriate backup retrieval logic
 4. Update metrics documentation comments
@@ -186,7 +188,7 @@ This approach avoids the complexity of maintaining connection pools while still 
 - Before commit, always check the copyright in the files to commit.
 
 ## Build & Run
-- Build: `go build`
+- Build: `go build ./cmd/backup_remote_files`
 - Test: `go test ./...`
 - Docker: `docker build -t backup_remote_files .`
 - CLI flags: `-c` (config), `-V` (version).
@@ -203,6 +205,7 @@ This approach avoids the complexity of maintaining connection pools while still 
 - `go.mod` is the exception: its `go` directive sets the minimum Go version. Only bump when the code requires a newer toolchain feature.
 - Keep all tooling in `.github/workflows/` (goreleaser, golangci-lint, actions/\*) at their latest stable versions.
 - When updating a version, check all references across the project (go.mod, Dockerfile, workflows, AGENTS.md).
+- `version.txt` lives next to the application in `cmd/backup_remote_files/` because it is embedded with `go:embed`.
 - golangci-lint version in `README.md` (`GOLANGCILINTVERSION`) must stay in sync with
   `mise.toml`, `.github/workflows/golangci-lint.yml`, and any reference in AGENTS.md.
 

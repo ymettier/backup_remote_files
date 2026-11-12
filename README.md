@@ -78,9 +78,9 @@ mise run run     # run the binary with config.yaml
 
 ```bash
 go mod download
-echo build > version.txt
+echo build > cmd/backup_remote_files/version.txt
 go test ./...
-go build -v .
+go build -v ./cmd/backup_remote_files
 ```
 
 ### Run Linters
@@ -97,9 +97,9 @@ ${DOCKER} run -t --rm --privileged -v $(pwd):/app -w /app "golangci/golangci-lin
 ```bash
 go mod download
 git tag <version>
-git tag --points-at HEAD > version.txt
+git tag --points-at HEAD > cmd/backup_remote_files/version.txt
 go test ./...
-go build -v .
+go build -v ./cmd/backup_remote_files
 ```
 
 ### Dockerfile build

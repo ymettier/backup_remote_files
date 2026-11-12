@@ -43,7 +43,8 @@ and exports Prometheus metrics for monitoring backup status and health.
 ## Key Components
 
 ### Configuration (config/config.go)
-- CLI flag parsing: `-c/--config` (required), `-p/--port` (default 9289), `-V/--version`
+- CLI flag parsing: `-c/--config` (required), `-p/--port` (overrides `exporter.port`, default 9289), `-V/--version`
+- Exporter configuration: `exporter.port` and `exporter.metricsPrefix`
 - Support for multiple backup definitions with URL, username, password, outputFile
 - Logging configuration per logger/LogOptions
 - Use Koanf for all YAML parsing
@@ -52,6 +53,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Validate configuration values at startup
 - Support both short and long CLI flags
 - With Koanf, prefer getting typed values than using the Get() method.
+- Defaults are embedded from `config/config.default.yaml`; the user config file and `BRF_*` environment variables override them.
 
 ### Main Application (cmd/backup_remote_files/main.go)
 - Prometheus metrics registry for backup status tracking
@@ -148,7 +150,7 @@ This approach avoids the complexity of maintaining connection pools while still 
 1. Add field to Config struct in config/config.go
 2. Add parsing logic in readConfig() function
 3. Add test case in config_test.go
-4. Update config/config.default.yaml with example value
+4. Update config/config.default.yaml with the default value
 
 ### Adding a New Metric
 1. Define in metrics struct in cmd/backup_remote_files/main.go

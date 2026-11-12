@@ -352,7 +352,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := config.New(flags.ConfigFile, flags.Port)
+	cfg, err := config.New(flags.ConfigFile, flags.Port, flags.PortSet)
 	if err != nil {
 		return err
 	}

@@ -48,7 +48,11 @@ podman run --rm -it \
 
 ## Configuration
 
-See config/config.default.yaml
+See config/config.default.yaml for the default configuration. This file is embedded in the binary, and any value not set in your configuration file falls back to it.
+
+The `exporter` section controls the Prometheus exporter:
+- `exporter.port` (default `9289`); the `-p/--port` CLI flag overrides it.
+- `exporter.metricsPrefix` (default `backupremotefiles`) sets the metrics namespace.
 
 Note: `logging.filename` can be set to one of `stdout`, `stderr` or a filename. If a filename is set, rotation of the log file will be automatically performed.
 

@@ -4,6 +4,7 @@
 package config
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/rawbytes"
 	"github.com/knadh/koanf/v2"
 	"github.com/spf13/pflag"
 
@@ -21,6 +23,37 @@ import (
 )
 
 const defaultPort = 9289
+
+//go:embed config.default.yaml
+var defaultConfig []byte
+
+// envKeyAliases maps BRF_ environment variable suffixes to their canonical
+// camelCase configuration keys.
+var envKeyAliases = map[string]string{
+	"interval":               "interval",
+	"retryinterval":          "retryInterval",
+	"metricsprefix":          "exporter.metricsPrefix",
+	"exporter_port":          "exporter.port",
+	"exporter_metricsprefix": "exporter.metricsPrefix",
+	"backuptimeout":          "backupTimeout",
+	"log_level":              "logging.level",
+	"logging_level":          "logging.level",
+	"logging_filename":       "logging.filename",
+	"logging_maxsize":        "logging.maxSize",
+	"logging_maxbackups":     "logging.maxBackups",
+	"logging_maxage":         "logging.maxAge",
+	"logging_compress":       "logging.compress",
+	"logging_json":           "logging.json",
+}
+
+// envKey converts a BRF_ environment variable name into a koanf key.
+func envKey(s string) string {
+	key := strings.ToLower(strings.TrimPrefix(s, "BRF_"))
+	if canonical, ok := envKeyAliases[key]; ok {
+		return canonical
+	}
+	return strings.ReplaceAll(key, "_", ".")
+}
 
 func versionInfo(version string) string {
 	output := fmt.Sprintf("%-15s: %s\n", "Version", version)
@@ -59,6 +92,7 @@ func versionInfo(version string) string {
 type CLIFlags struct {
 	ConfigFile string
 	Port       int
+	PortSet    bool
 }
 
 func ParseFlags(version string, args []string) (CLIFlags, error) {
@@ -91,6 +125,7 @@ func ParseFlags(version string, args []string) (CLIFlags, error) {
 	return CLIFlags{
 		ConfigFile: *configFile,
 		Port:       *port,
+		PortSet:    fs.Changed("port"),
 	}, nil
 }
 
@@ -111,123 +146,65 @@ type Config struct {
 	MetricsPrefix string
 }
 
-func New(configFile string, port int) (Config, error) {
+func New(configFile string, port int, portSet bool) (Config, error) {
 	var cfg Config
-	cfg.Port = port
 
 	err := cfg.readConfig(configFile)
 	if err != nil {
 		return cfg, err
 	}
 
+	if portSet {
+		cfg.Port = port
+	}
+
 	return cfg, nil
 }
 
-func lookupConfigKey(k *koanf.Koanf, camelKey string) (string, bool) {
-	envKey := strings.ToLower(camelKey)
-	if k.Exists(envKey) {
-		return k.String(envKey), true
-	}
-	if k.Exists(camelKey) {
-		return k.String(camelKey), true
-	}
-	underscoreKey := strings.ReplaceAll(strings.ToLower(camelKey), ".", "_")
-	if k.Exists(underscoreKey) {
-		return k.String(underscoreKey), true
-	}
-	return "", false
-}
-
-func getConfigString(k *koanf.Koanf, camelKey, defaultValue string) string {
-	if val, ok := lookupConfigKey(k, camelKey); ok {
-		return val
-	}
-	return defaultValue
-}
-
-func getConfigDuration(k *koanf.Koanf, camelKey, defaultDuration string) (time.Duration, error) {
-	durationStr := defaultDuration
-	if val, ok := lookupConfigKey(k, camelKey); ok {
-		durationStr = val
-	}
-	duration, err := time.ParseDuration(durationStr)
-	if err != nil {
-		return 0, err
-	}
-	return duration, nil
+func getConfigDuration(k *koanf.Koanf, key string) (time.Duration, error) {
+	return time.ParseDuration(k.String(key))
 }
 
 func loggerConfig(k *koanf.Koanf) logger.LogOptions {
-	logOpts := logger.LogOptions{
-		Level:      "INFO",
-		Filename:   "",
-		MaxSize:    5,
-		MaxBackups: 10,
-		MaxAge:     14,
-		Compress:   true,
-		JSON:       false,
+	return logger.LogOptions{
+		Level:      k.String("logging.level"),
+		Filename:   k.String("logging.filename"),
+		MaxSize:    k.Int("logging.maxSize"),
+		MaxBackups: k.Int("logging.maxBackups"),
+		MaxAge:     k.Int("logging.maxAge"),
+		Compress:   k.Bool("logging.compress"),
+		JSON:       k.Bool("logging.json"),
 	}
-
-	if v := k.String("logging.level"); v != "" {
-		logOpts.Level = v
-	}
-	if v := k.String("logging.filename"); v != "" {
-		logOpts.Filename = v
-	}
-	if k.Exists("logging.maxSize") {
-		logOpts.MaxSize = k.Int("logging.maxSize")
-	}
-	if k.Exists("logging.maxBackups") {
-		logOpts.MaxBackups = k.Int("logging.maxBackups")
-	}
-	if k.Exists("logging.maxAge") {
-		logOpts.MaxAge = k.Int("logging.maxAge")
-	}
-	if k.Exists("logging.compress") {
-		logOpts.Compress = k.Bool("logging.compress")
-	}
-	if k.Exists("logging.json") {
-		logOpts.JSON = k.Bool("logging.json")
-	}
-	return logOpts
 }
 
 func (c *Config) readConfig(filename string) error {
-	l := logger.Get()
-
-	// Initialize Koanf with YAML parser
+	// Initialize Koanf with the embedded defaults
 	k := koanf.New(".")
+	if err := k.Load(rawbytes.Provider(defaultConfig), yaml.Parser()); err != nil {
+		return fmt.Errorf("failed to load default configuration: %w", err)
+	}
+
+	// Merge the user configuration on top of the defaults
 	if err := k.Load(file.Provider(filename), yaml.Parser()); err != nil {
 		return fmt.Errorf("failed to read configuration file %s: %w", filename, err)
 	}
 
 	// Load environment variables with BRF_ prefix (overrides YAML values)
-	// For flat keys: BRF_RETRYINTERVAL -> retryInterval, BRF_INTERVAL -> interval
-	// For nested keys: BRF_LOGGING_LEVEL -> logging.level
-	if err := k.Load(env.Provider("BRF_", ".", func(s string) string {
-		// Remove BRF_ prefix
-		s = strings.TrimPrefix(s, "BRF_")
-		// Convert to lowercase
-		s = strings.ToLower(s)
-		// Replace underscores with dots for nested keys
-		s = strings.ReplaceAll(s, "_", ".")
-		return s
-	}), nil); err != nil {
+	if err := k.Load(env.Provider("BRF_", ".", envKey), nil); err != nil {
 		return fmt.Errorf("failed to load environment variables: %w", err)
 	}
 
 	// Logging configuration
-	if k.Exists("logging") {
-		logOpts := loggerConfig(k)
-		logger.Reset(&logOpts)
-		l = logger.Get()
-	}
+	logOpts := loggerConfig(k)
+	logger.Reset(&logOpts)
+	l := logger.Get()
 
 	if err := c.readIntervals(k, l); err != nil {
 		return err
 	}
 
-	c.MetricsPrefix = getConfigString(k, "metricsPrefix", "backupremotefiles")
+	c.Port = k.Int("exporter.port")
+	c.MetricsPrefix = k.String("exporter.metricsPrefix")
 	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
 
 	if err := c.readBackups(k, l); err != nil {
@@ -241,7 +218,7 @@ func (c *Config) readIntervals(k *koanf.Koanf, l *logger.Logger) error {
 	var err error
 
 	// Interval
-	c.Interval, err = getConfigDuration(k, "interval", "24h")
+	c.Interval, err = getConfigDuration(k, "interval")
 	if err != nil {
 		l.Error("Failed to parse duration 'interval'", slog.Any("error", err))
 		return err
@@ -249,7 +226,7 @@ func (c *Config) readIntervals(k *koanf.Koanf, l *logger.Logger) error {
 	l.Info("Config: interval", slog.String("interval", c.Interval.String()))
 
 	// RetryInterval
-	c.RetryInterval, err = getConfigDuration(k, "retryInterval", "24h")
+	c.RetryInterval, err = getConfigDuration(k, "retryInterval")
 	if err != nil {
 		l.Error("Failed to parse duration 'retryInterval'", slog.Any("error", err))
 		return err
@@ -261,9 +238,6 @@ func (c *Config) readIntervals(k *koanf.Koanf, l *logger.Logger) error {
 
 func (c *Config) readBackups(k *koanf.Koanf, l *logger.Logger) error {
 	c.Backups = make([]Backup, 0)
-	if !k.Exists("backups") {
-		return nil
-	}
 
 	for _, id := range k.MapKeys("backups") {
 		backup, err := readBackup(k, l, id)
@@ -278,7 +252,11 @@ func (c *Config) readBackups(k *koanf.Koanf, l *logger.Logger) error {
 
 func readBackup(k *koanf.Koanf, l *logger.Logger, id string) (Backup, error) {
 	prefix := "backups." + id + "."
-	timeout, err := getConfigDuration(k, prefix+"timeout", "1m")
+	timeoutKey := prefix + "timeout"
+	if !k.Exists(timeoutKey) {
+		timeoutKey = "backupTimeout"
+	}
+	timeout, err := getConfigDuration(k, timeoutKey)
 	if err != nil {
 		l.Error("Failed to parse duration 'timeout' for backup", slog.String("id", id), slog.Any("error", err))
 		return Backup{}, err

@@ -48,7 +48,8 @@ func createConfigFile(t *testing.T, key, url string) (configurationFilename, out
 			"\n"+
 			"interval: '1m'\n"+
 			"retryInterval: '10s'\n"+
-			"metricsPrefix: 'backuprf'\n",
+			"exporter:\n"+
+			"  metricsPrefix: 'backuprf'\n",
 		key,
 		url,
 		outputFilename,
@@ -125,7 +126,8 @@ func TestRetrieveUrls(t *testing.T) {
     outputFile: 'retry_b.out'
 interval: '1m'
 retryInterval: '10s'
-metricsPrefix: 'backuprf'`,
+exporter:
+  metricsPrefix: 'backuprf'`,
 			modifyStatus:  func(success map[string]bool) { success["a"] = true; success["b"] = false },
 			isRetry:       false,
 			wantSuccess:   true,
@@ -170,7 +172,7 @@ metricsPrefix: 'backuprf'`,
 				configFilename, outputFilename = createConfigFile(t, wantedMsg, url)
 			}
 
-			cfgVal, err := config.New(configFilename, 9289)
+			cfgVal, err := config.New(configFilename, 0, false)
 			require.NoError(t, err)
 			cfg := &cfgVal
 			if tt.modifyConfig != nil {
@@ -454,7 +456,7 @@ func TestMetricsValues(t *testing.T) {
 
 	configurationFilename, outputFilename := createConfigFile(t, wantedMsg, ts.URL)
 
-	cfg, err := config.New(configurationFilename, 9289)
+	cfg, err := config.New(configurationFilename, 0, false)
 	assert.NoError(t, err)
 
 	reg := prometheus.NewRegistry()
@@ -502,7 +504,7 @@ func TestMetricsValues_BrokenServer(t *testing.T) {
 	err := os.WriteFile(outputFilename, []byte(oldMsg), 0600)
 	assert.NoError(t, err)
 
-	cfg, err := config.New(configurationFilename, 9289)
+	cfg, err := config.New(configurationFilename, 0, false)
 	assert.NoError(t, err)
 
 	reg := prometheus.NewRegistry()
@@ -543,7 +545,7 @@ func TestMetricsValues_RenameBlockedByDirectory(t *testing.T) {
 
 	configurationFilename, _ := createConfigFile(t, wantedMsg, ts.URL)
 
-	cfg, err := config.New(configurationFilename, 9289)
+	cfg, err := config.New(configurationFilename, 0, false)
 	assert.NoError(t, err)
 
 	// Override the output path to a directory so rename fails
@@ -594,7 +596,8 @@ func TestRun_ServesMetrics(t *testing.T) {
 			"\n"+
 			"interval: '1m'\n"+
 			"retryInterval: '10s'\n"+
-			"metricsPrefix: 'run_test'\n",
+			"exporter:\n"+
+			"  metricsPrefix: 'run_test'\n",
 		wantedMsg, ts.URL, wantedMsg+".out",
 	)
 	configFile := "run_config.yaml"
@@ -800,7 +803,8 @@ func TestRunBackupLoop_Retry(t *testing.T) {
 			"\n"+
 			"interval: '1h'\n"+
 			"retryInterval: '50ms'\n"+
-			"metricsPrefix: 'retry_test'\n",
+			"exporter:\n"+
+			"  metricsPrefix: 'retry_test'\n",
 		ts.URL,
 	)
 	configFile := "retry_loop_config.yaml"

@@ -14,14 +14,15 @@ and exports Prometheus metrics for monitoring backup status and health.
 - **Metrics**: Prometheus client_golang
 - **Logging**: `log/slog` (stdlib, text handler, defaults to stderr)
 - **Log rotation**: `gopkg.in/natefinch/lumberjack.v2`
-- **Testing**: `testing` + `github.com/stretchr/testify/assert`
+- **Testing**: `testing` + `github.com/stretchr/testify` (`assert` and `require`)
+- **Dependency updates**: Dependabot (`gomod`, `docker`, `github-actions`)
 - **Build**: GoReleaser, CGO_ENABLED=0, Linux only (amd64/arm/arm64)
 - Avoid `github.com/sirupsen/logrus` (blocked by depguard linter)
 
 ## Project Structure
 ```
 .
-├── .github/         # GitHub Actions workflows
+├── .github/         # GitHub Actions workflows and Dependabot config
 ├── .golangci.yml    # Linter configuration
 ├── .goreleaser.yaml # Release automation
 ├── cmd/
@@ -48,9 +49,9 @@ and exports Prometheus metrics for monitoring backup status and health.
 ## Key Components
 
 ### Configuration (internal/config/config.go)
-- CLI flag parsing: `-c/--config` (required), `-p/--port` (overrides `exporter.port`, default 9289), `-V/--version`
+- CLI flag parsing: `-c/--config` (required), `-p/--port` (overrides `exporter.port`, default 9289), `-V/--version`, `-h/--help`
 - Exporter configuration: `exporter.port` and `exporter.metricsPrefix`
-- Support for multiple backup definitions with URL, username, password, outputFile
+- Support for multiple backup definitions with URL, username, password, outputFile, and timeout
 - Logging configuration per logger/LogOptions
 - Use Koanf for all YAML parsing
 - Use spf13/pflag for CLI flag parsing
@@ -84,7 +85,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Copyright year: `20XX-20YY` (creation year to current year), or `20XX` if same year.
   Derive `20XX` from `git log --diff-filter=A --follow <file>`.
 - No copyright on `version.txt`. README.md copyright goes at end of file.
-- All source file should have a copyright header (the syntax depends on the file type).
+- All source files should have a copyright header (the syntax depends on the file type).
   For non-go files, use the appropriate comment syntax (e.g., `//` for `.txt`, `<!--` and `-->` for `.md`)
   and set a header similar to the `.go` files.
 - Use `any` instead of `interface{}` (gofmt rewrites it)
@@ -100,11 +101,11 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Context: pass `context.Context` to operations that may need cancellation.
 
 ### Environment Variables
-- Use optional environment variables for configuration (e.g., `BRF_BACKUP_DIR`...)
+- Use optional environment variables for configuration (e.g., `BRF_INTERVAL`, `BRF_EXPORTER_PORT`)
 - Environment variables should override values from the config file
-- Environment variable names should be in uppercase with underscores (e.g., `BRF_BACKUP_DIR`...)
+- Environment variable names should be in uppercase with underscores (e.g., `BRF_RETRYINTERVAL`, `BRF_LOGGING_LEVEL`)
 - Environment variables should be documented in the `internal/config/config.default.yaml`
-- Environment variables should be prefixed with `BRF_` (e.g., `BRF_DIR`, `BRF_LOG_LEVEL`)
+- Environment variables should be prefixed with `BRF_` (e.g., `BRF_LOG_LEVEL`)
 
 ### Metrics
 - Use prometheus.NewGaugeVec/prometheus.NewCounterVec for metrics
@@ -125,7 +126,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - File rotation via lumberjack.v2
 - Configurable levels: INFO, DEBUG, ERROR, WARN
 - JSON and text output formats
-- Configuration through config.yaml
+- Configuration through the `logging` section
 
 ### Testing Conventions
 - Write tests alongside features in `*_test.go` files
@@ -134,7 +135,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Prefer table-driven tests (lists of test cases) over repetitive individual test functions
   when the same logic is exercised with different inputs or expected outcomes
 - Tests should be isolated and use temporary files/directories
-- Always clean up test artifacts with defer
+- Always clean up test artifacts with `defer` or `t.Cleanup`
 - Test data files must be placed in the `testdata/` directory
 - Unused testdata files must be removed
 
@@ -164,17 +165,16 @@ This approach avoids the complexity of maintaining connection pools while still 
 4. Update metrics documentation comments
 
 ### Modifying CLI Flags
-1. Update parseFlags() in internal/config/config.go
+1. Update `ParseFlags()` in internal/config/config.go
 2. Add both short and long form support
 3. Update help text
 4. Test with -h flag
 
 ### Updating Go Version
 1. Update `go 1.xx.x` in `go.mod`
-2. Update Go version reference in AGENTS.md
-3. Update base image in Dockerfile (builder and runtime)
-4. Update `.golangci.yml` if it references a Go version
-5. Run `go mod tidy` after updating
+2. Update the Go version in `AGENTS.md`, `mise.toml`, `Dockerfile`, and `.github/workflows/*.yml`
+3. Update `.golangci.yml` if it references a Go version
+4. Run `go mod tidy` after updating
 
 ### Modifying Docker Image
 1. Update the builder base image in Dockerfile
@@ -188,6 +188,8 @@ This approach avoids the complexity of maintaining connection pools while still 
 - `gopkg.in/natefinch/lumberjack.v2` - Log rotation
 - `github.com/spf13/pflag` - CLI flag parsing
 - `github.com/stretchr/testify` - Testing utilities
+- Dependabot (`.github/dependabot.yml`) updates Go modules, Docker images, and GitHub Actions weekly.
+  `mise.toml` and the golangci-lint action `version` input are not managed by Dependabot.
 
 ## Commits
 - Never commit, never stage (`git add`), never run `git commit` — even if explicitly asked. Always suggest the command for the user to run.
@@ -200,8 +202,9 @@ This approach avoids the complexity of maintaining connection pools while still 
 - Build: `go build ./cmd/backup_remote_files`
 - Test: `go test ./...`
 - Docker: `docker build -t backup_remote_files .`
-- CLI flags: `-c` (config), `-V` (version).
-- mise (toolchain + tasks, see `mise.toml`): `mise run check`, `mise run build`, `mise run run`, `mise run clean`
+- CLI flags: `-c/--config`, `-p/--port`, `-V/--version`, `-h/--help`.
+- mise (toolchain + tasks, see `mise.toml`): `mise run check`, `mise run check:test`,
+  `mise run coverage`, `mise run build`, `mise run run`, `mise run deps`, `mise run clean`
 
 ## Linting
 - Run: `golangci-lint run ./...`

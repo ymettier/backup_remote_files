@@ -372,19 +372,26 @@ func run(ctx context.Context) error {
 	return startMetricsServer(ctx, reg, cfg.Port)
 }
 
+// exitCode returns the process exit code for a run() result.
+// Expected termination conditions are not errors.
+func exitCode(err error) int {
+	if err == nil ||
+		errors.Is(err, flag.ErrHelp) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return 0
+	}
+	return 1
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 
 	err := run(ctx)
 	stop()
 
-	if err == nil ||
-		errors.Is(err, flag.ErrHelp) ||
-		errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded) {
-		return
+	if code := exitCode(err); code != 0 {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(code)
 	}
-
-	fmt.Fprintf(os.Stderr, "error: %v\n", err)
-	os.Exit(1)
 }

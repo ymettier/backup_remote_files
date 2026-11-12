@@ -50,17 +50,21 @@ func envKey(s string) string {
 }
 
 func versionInfo(version string) string {
+	info, _ := debug.ReadBuildInfo()
+	return formatVersionInfo(version, info)
+}
+
+// formatVersionInfo renders the version and, when available, build information.
+func formatVersionInfo(version string, info *debug.BuildInfo) string {
 	output := fmt.Sprintf("%-15s: %s\n", "Version", version)
 
-	// Get and print additionnal build info
+	if info == nil {
+		return output
+	}
+
 	var lastCommit time.Time
 	revision := "unknown"
 	dirtyBuild := true
-
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return output
-	}
 
 	for _, kv := range info.Settings {
 		if kv.Value == "" {

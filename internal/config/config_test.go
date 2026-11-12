@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,76 @@ func TestVersion(t *testing.T) {
 	output := versionInfo(wantedVersion)
 	s := strings.Split(output, "\n")
 	assert.Equal(t, "Version        : "+wantedVersion, s[0], "Printing version")
+}
+
+func TestFormatVersionInfo(t *testing.T) {
+	commitTime := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
+
+	tests := []struct {
+		name     string
+		info     *debug.BuildInfo
+		contains []string
+		absent   []string
+	}{
+		{
+			name:     "no build info",
+			info:     nil,
+			contains: []string{"Version        : 1.2.3\n"},
+			absent:   []string{"Revision", "Dirty Build", "Last Commit", "Go Version"},
+		},
+		{
+			name: "full build info",
+			info: &debug.BuildInfo{
+				GoVersion: "go1.26.0",
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.revision", Value: "abc123"},
+					{Key: "vcs.time", Value: commitTime.Format(time.RFC3339)},
+					{Key: "vcs.modified", Value: "true"},
+				},
+			},
+			contains: []string{
+				"Revision       : abc123",
+				"Dirty Build    : true",
+				"Last Commit    : " + commitTime.String(),
+				"Go Version     : go1.26.0",
+			},
+		},
+		{
+			name: "defaults when settings are empty",
+			info: &debug.BuildInfo{
+				GoVersion: "go1.26.0",
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.revision", Value: ""},
+					{Key: "vcs.modified", Value: "false"},
+				},
+			},
+			contains: []string{
+				"Revision       : unknown",
+				"Dirty Build    : false",
+				"Last Commit    : 0001-01-01 00:00:00 +0000 UTC",
+			},
+		},
+		{
+			name: "invalid commit time is ignored",
+			info: &debug.BuildInfo{
+				Settings: []debug.BuildSetting{
+					{Key: "vcs.time", Value: "not-a-time"},
+				},
+			},
+			contains: []string{"Last Commit    : 0001-01-01 00:00:00 +0000 UTC"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			output := formatVersionInfo("1.2.3", tt.info)
+			for _, want := range tt.contains {
+				assert.Contains(t, output, want)
+			}
+			for _, unwanted := range tt.absent {
+				assert.NotContains(t, output, unwanted)
+			}
+		})
+	}
 }
 
 func TestEnvVariableOverrides(t *testing.T) {
@@ -280,6 +351,16 @@ func TestNew_BackupDefaultTimeout(t *testing.T) {
 
 	require.Len(t, cfg.Backups, 1)
 	assert.Equal(t, time.Minute, cfg.Backups[0].Timeout)
+}
+
+func TestNew_InvalidBackupTimeout(t *testing.T) {
+	testutil.UseTempDir(t)
+	configContent := "backups:\n  test:\n    url: http://example.com\n    outputFile: out.txt\n    timeout: 'bad-duration'\n"
+	require.NoError(t, os.WriteFile("bad_timeout.yaml", []byte(configContent), 0600))
+
+	_, err := New("bad_timeout.yaml", 0, false)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid duration")
 }
 
 func TestNew_LoggingSection(t *testing.T) {

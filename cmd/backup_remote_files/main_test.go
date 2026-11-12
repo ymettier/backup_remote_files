@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"net"
@@ -889,4 +890,24 @@ func TestBackupFile_BodyCloseError(t *testing.T) {
 	_, err := backupFile(t.Context(), "test", "http://example.com", "", "", testOutputFile, 10*time.Second)
 	assert.NoError(t, err)
 	assert.FileExists(t, testOutputFile)
+}
+
+func TestExitCode(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{name: "success", err: nil, want: 0},
+		{name: "help", err: flag.ErrHelp, want: 0},
+		{name: "wrapped help", err: fmt.Errorf("wrapped: %w", flag.ErrHelp), want: 0},
+		{name: "canceled", err: context.Canceled, want: 0},
+		{name: "deadline exceeded", err: context.DeadlineExceeded, want: 0},
+		{name: "unexpected error", err: errors.New("boom"), want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, exitCode(tt.err))
+		})
+	}
 }

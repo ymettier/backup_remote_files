@@ -29,13 +29,15 @@ and exports Prometheus metrics for monitoring backup status and health.
 │       ├── main.go      # Application entry point and metrics collection
 │       ├── main_test.go # Integration tests
 │       └── version.txt  # Build version (embedded)
-├── config/          # Configuration parsing and CLI flags
+├── config/
+│   ├── config.default.yaml  # Default/example configuration
+│   ├── config.go            # Configuration parsing and CLI flags
+│   └── config_test.go       # Configuration tests
 ├── logger/          # Structured logging setup
 ├── testutil/        # Test helpers
 ├── go.mod / go.sum  # Go modules
 ├── mise.toml        # Toolchain versions and development tasks
-├── Dockerfile       # Container image definition
-└── config.yaml.sample  # Example configuration
+└── Dockerfile       # Container image definition
 ```
 
 ## Key Components
@@ -94,7 +96,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 - Use optional environment variables for configuration (e.g., `BRF_BACKUP_DIR`...)
 - Environment variables should override values from the config file
 - Environment variable names should be in uppercase with underscores (e.g., `BRF_BACKUP_DIR`...)
-- Environment variables should be documented in the `config.yaml.sample`
+- Environment variables should be documented in the `config/config.default.yaml`
 - Environment variables should be prefixed with `BRF_` (e.g., `BRF_DIR`, `BRF_LOG_LEVEL`)
 
 ### Metrics
@@ -146,7 +148,7 @@ This approach avoids the complexity of maintaining connection pools while still 
 1. Add field to Config struct in config/config.go
 2. Add parsing logic in readConfig() function
 3. Add test case in config_test.go
-4. Update config.yaml.sample with example value
+4. Update config/config.default.yaml with example value
 
 ### Adding a New Metric
 1. Define in metrics struct in cmd/backup_remote_files/main.go

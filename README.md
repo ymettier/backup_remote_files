@@ -48,7 +48,7 @@ podman run --rm -it \
 
 ## Configuration
 
-See config.yaml.sample
+See config/config.default.yaml
 
 Note: `logging.filename` can be set to one of `stdout`, `stderr` or a filename. If a filename is set, rotation of the log file will be automatically performed.
 
@@ -56,7 +56,7 @@ Note: `logging.filename` can be set to one of `stdout`, `stderr` or a filename. 
 
 All environment variables are prefixed with `BRF_`.
 
-See config.yaml.sample for a list of environment variables that can be used to override configuration values. Example:
+See config/config.default.yaml for a list of environment variables that can be used to override configuration values. Example:
 
 - `BRF_LOGGING_LEVEL`: log level
 

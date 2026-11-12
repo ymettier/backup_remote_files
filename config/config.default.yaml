@@ -1,0 +1,39 @@
+# Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+# Default configuration for backup_remote_files.
+# Every value below matches the hardcoded default in config/config.go.
+# Parameters not set here fall back to these defaults.
+#
+# The exporter port is not read from this file: it comes from the CLI
+# (-p/--port) and defaults to 9289.
+#
+# All parameters can be overridden with environment variables prefixed with "BRF_".
+# Environment variable naming:
+#   - Flat keys (camelCase): convert to UPPERCASE without underscores
+#     Example: retryInterval -> BRF_RETRYINTERVAL, metricsPrefix -> BRF_METRICSPREFIX
+#   - Nested keys (dots): use UPPERCASE with underscores for nesting
+#     Example: logging.level -> BRF_LOGGING_LEVEL
+
+backups:
+  someid:
+    # url and outputFile are required (no default value).
+    url: https://some.url/data
+    username: ""              # Default: empty
+    password: ""              # Default: empty
+    outputFile: "outputfile"  # Required (no default value)
+    # Optional timeout for the backup request.
+    timeout: "1m"             # Default: 1m
+
+interval: "24h"               # Default: 24h
+retryInterval: "24h"          # Default: 24h
+metricsPrefix: "backupremotefiles"  # Default: backupremotefiles
+
+logging:
+  level: INFO     # Default: INFO (DEBUG, INFO, WARN, ERROR)
+  filename: ""    # Default: empty, which logs to stderr; or "stdout" or a filename
+  maxSize: 5      # Default: 5 (megabytes before rotation)
+  maxBackups: 10  # Default: 10 (number of old log files to keep)
+  maxAge: 14      # Default: 14 (days to keep old log files)
+  compress: true  # Default: true (compress rotated files)
+  json: false     # Default: false (log in JSON)

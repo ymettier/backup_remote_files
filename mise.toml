@@ -1,0 +1,55 @@
+# Copyright 2026 The Backup_remote_files Authors. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+[tools]
+go = "1.27.3"
+golangci-lint = "2.15.0"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
+
+[env]
+_.path = ["./bin"]
+
+[tasks]
+[tasks."check:fmt"]
+description = "Check formatting and imports"
+run = [
+  "test -z \"$(gofmt -l .)\"",
+  "goimports -d .",
+]
+
+[tasks."check:lint"]
+description = "Run golangci-lint"
+run = "golangci-lint run ./..."
+
+[tasks."check:test"]
+description = "Run tests with coverage"
+run = "go test -cover ./..."
+
+[tasks."coverage"]
+description = "Show code coverage for each package"
+run = "go test -cover ./..."
+
+[tasks."check"]
+description = "Run formatting, lint, and tests"
+depends = ["check:fmt", "check:lint", "check:test"]
+
+[tasks."build"]
+description = "Build the application"
+run = [
+    "echo dev > version.txt",
+    "mkdir -p bin",
+    "go build -trimpath -o bin/backup_remote_files ."
+]
+
+[tasks."run"]
+description = "Run the application with config.yaml"
+depends = ["build"]
+run = "./bin/backup_remote_files --config config.yaml"
+
+[tasks."deps"]
+description = "Tidy and verify dependencies"
+run = ["go mod tidy", "go mod verify"]
+
+[tasks."clean"]
+description = "Remove build output"
+run = "rm -rf bin"

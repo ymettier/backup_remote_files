@@ -62,6 +62,18 @@ See config.yaml.sample for a list of environment variables that can be used to o
 
 ## Build
 
+### Using mise
+
+[mise](https://mise.jdx.dev/) provides the Go toolchain and shortcuts for the common development tasks:
+
+```bash
+mise trust       # first run only: trust this repository's mise.toml
+mise tasks       # list available tasks
+mise run check   # formatting, lint and tests
+mise run build   # build ./bin/backup_remote_files
+mise run run     # run the binary with config.yaml
+```
+
 ### Development Build
 
 ```bash

@@ -30,6 +30,7 @@ and exports Prometheus metrics for monitoring backup status and health.
 ├── main.go          # Application entry point and metrics collection
 ├── main_test.go     # Integration tests
 ├── go.mod / go.sum  # Go modules
+├── mise.toml        # Toolchain versions and development tasks
 ├── Dockerfile       # Container image definition
 ├── config.yaml.sample  # Example configuration
 └── version.txt      # Build version
@@ -189,6 +190,7 @@ This approach avoids the complexity of maintaining connection pools while still 
 - Test: `go test ./...`
 - Docker: `docker build -t backup_remote_files .`
 - CLI flags: `-c` (config), `-V` (version).
+- mise (toolchain + tasks, see `mise.toml`): `mise run check`, `mise run build`, `mise run run`, `mise run clean`
 
 ## Linting
 - Run: `golangci-lint run ./...`
@@ -196,13 +198,13 @@ This approach avoids the complexity of maintaining connection pools while still 
   `docker run -t --rm -v $(pwd):/app:z -w /app golangci/golangci-lint:v2.15.0 golangci-lint run ./...`
 
 ## Version Management
-- Keep Go version in `Dockerfile` and `.github/workflows/*.yml` in sync.
+- Keep Go version in `Dockerfile`, `mise.toml`, and `.github/workflows/*.yml` in sync.
   Use the latest patch release (e.g., `1.27.3` not `1.27` or `stable`).
 - `go.mod` is the exception: its `go` directive sets the minimum Go version. Only bump when the code requires a newer toolchain feature.
 - Keep all tooling in `.github/workflows/` (goreleaser, golangci-lint, actions/\*) at their latest stable versions.
 - When updating a version, check all references across the project (go.mod, Dockerfile, workflows, AGENTS.md).
 - golangci-lint version in `README.md` (`GOLANGCILINTVERSION`) must stay in sync with
-  `.github/workflows/golangci-lint.yml` and any reference in AGENTS.md.
+  `mise.toml`, `.github/workflows/golangci-lint.yml`, and any reference in AGENTS.md.
 
 ## Important Notes
 - All file operations use .part suffix during transfer, renamed on success

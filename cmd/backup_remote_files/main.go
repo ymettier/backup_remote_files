@@ -92,12 +92,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 			},
 		),
 	}
-	reg.MustRegister(m.BuildInfo)
-	reg.MustRegister(m.Status)
-	reg.MustRegister(m.Size)
-	reg.MustRegister(m.Time)
-	reg.MustRegister(m.BackupFailed)
-	reg.MustRegister(m.BackupTotal)
+	reg.MustRegister(m.BuildInfo, m.Status, m.Size, m.Time, m.BackupFailed, m.BackupTotal)
 	return m
 }
 
@@ -244,7 +239,6 @@ func processBackup(
 	metric *metrics,
 	status *backupStatus,
 ) (isHTTPError bool) {
-	status.success[backup.ID] = true
 	size, err := backupFile(
 		ctx,
 		backup.ID,
@@ -261,6 +255,8 @@ func processBackup(
 		status.success[backup.ID] = !isHTTP
 		return isHTTP
 	}
+
+	status.success[backup.ID] = true
 	metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))
 	metric.Size.With(prometheus.Labels{"id": backup.ID}).Set(float64(size))
 	metric.Time.With(prometheus.Labels{"id": backup.ID}).Set(float64(time.Now().Unix()))
@@ -377,13 +373,18 @@ func run(ctx context.Context) error {
 }
 
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 
-	if err := run(ctx); err != nil {
-		cancel()
-		if !errors.Is(err, flag.ErrHelp) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+	err := run(ctx)
+	stop()
+
+	if err == nil ||
+		errors.Is(err, flag.ErrHelp) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return
 	}
+
+	fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	os.Exit(1)
 }

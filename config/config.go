@@ -28,22 +28,16 @@ const defaultPort = 9289
 var defaultConfig []byte
 
 // envKeyAliases maps BRF_ environment variable suffixes to their canonical
-// camelCase configuration keys.
+// configuration key when the generic conversion would not produce it.
 var envKeyAliases = map[string]string{
-	"interval":               "interval",
 	"retryinterval":          "retryInterval",
 	"metricsprefix":          "exporter.metricsPrefix",
-	"exporter_port":          "exporter.port",
 	"exporter_metricsprefix": "exporter.metricsPrefix",
 	"backuptimeout":          "backupTimeout",
 	"log_level":              "logging.level",
-	"logging_level":          "logging.level",
-	"logging_filename":       "logging.filename",
 	"logging_maxsize":        "logging.maxSize",
 	"logging_maxbackups":     "logging.maxBackups",
 	"logging_maxage":         "logging.maxAge",
-	"logging_compress":       "logging.compress",
-	"logging_json":           "logging.json",
 }
 
 // envKey converts a BRF_ environment variable name into a koanf key.
@@ -207,11 +201,7 @@ func (c *Config) readConfig(filename string) error {
 	c.MetricsPrefix = k.String("exporter.metricsPrefix")
 	l.Info("Config: metricsPrefix", slog.String("metricsPrefix", c.MetricsPrefix))
 
-	if err := c.readBackups(k, l); err != nil {
-		return err
-	}
-
-	return nil
+	return c.readBackups(k, l)
 }
 
 func (c *Config) readIntervals(k *koanf.Koanf, l *logger.Logger) error {

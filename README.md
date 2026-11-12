@@ -48,7 +48,11 @@ podman run --rm -it \
 
 ## Configuration
 
-See config.yaml.sample
+See internal/config/config.default.yaml for the default configuration. This file is embedded in the binary, and any value not set in your configuration file falls back to it.
+
+The `exporter` section controls the Prometheus exporter:
+- `exporter.port` (default `9289`); the `-p/--port` CLI flag overrides it.
+- `exporter.metricsPrefix` (default `backupremotefiles`) sets the metrics namespace.
 
 Note: `logging.filename` can be set to one of `stdout`, `stderr` or a filename. If a filename is set, rotation of the log file will be automatically performed.
 
@@ -56,7 +60,7 @@ Note: `logging.filename` can be set to one of `stdout`, `stderr` or a filename. 
 
 All environment variables are prefixed with `BRF_`.
 
-See config.yaml.sample for a list of environment variables that can be used to override configuration values. Example:
+See internal/config/config.default.yaml for a list of environment variables that can be used to override configuration values. Example:
 
 - `BRF_LOGGING_LEVEL`: log level
 
@@ -78,9 +82,9 @@ mise run run     # run the binary with config.yaml
 
 ```bash
 go mod download
-echo build > version.txt
+echo build > cmd/backup_remote_files/version.txt
 go test ./...
-go build -v .
+go build -v ./cmd/backup_remote_files
 ```
 
 ### Run Linters
@@ -97,9 +101,9 @@ ${DOCKER} run -t --rm --privileged -v $(pwd):/app -w /app "golangci/golangci-lin
 ```bash
 go mod download
 git tag <version>
-git tag --points-at HEAD > version.txt
+git tag --points-at HEAD > cmd/backup_remote_files/version.txt
 go test ./...
-go build -v .
+go build -v ./cmd/backup_remote_files
 ```
 
 ### Dockerfile build

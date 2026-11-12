@@ -23,8 +23,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"backup_remote_files/config"
-	"backup_remote_files/logger"
+	"backup_remote_files/internal/config"
+	"backup_remote_files/internal/logger"
 )
 
 var (
@@ -92,12 +92,7 @@ func NewMetrics(reg prometheus.Registerer, namespace string) *metrics {
 			},
 		),
 	}
-	reg.MustRegister(m.BuildInfo)
-	reg.MustRegister(m.Status)
-	reg.MustRegister(m.Size)
-	reg.MustRegister(m.Time)
-	reg.MustRegister(m.BackupFailed)
-	reg.MustRegister(m.BackupTotal)
+	reg.MustRegister(m.BuildInfo, m.Status, m.Size, m.Time, m.BackupFailed, m.BackupTotal)
 	return m
 }
 
@@ -244,7 +239,6 @@ func processBackup(
 	metric *metrics,
 	status *backupStatus,
 ) (isHTTPError bool) {
-	status.success[backup.ID] = true
 	size, err := backupFile(
 		ctx,
 		backup.ID,
@@ -261,6 +255,8 @@ func processBackup(
 		status.success[backup.ID] = !isHTTP
 		return isHTTP
 	}
+
+	status.success[backup.ID] = true
 	metric.Status.With(prometheus.Labels{"id": backup.ID}).Set(float64(1))
 	metric.Size.With(prometheus.Labels{"id": backup.ID}).Set(float64(size))
 	metric.Time.With(prometheus.Labels{"id": backup.ID}).Set(float64(time.Now().Unix()))
@@ -352,7 +348,7 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cfg, err := config.New(flags.ConfigFile, flags.Port)
+	cfg, err := config.New(flags.ConfigFile, flags.Port, flags.PortSet)
 	if err != nil {
 		return err
 	}
@@ -376,14 +372,26 @@ func run(ctx context.Context) error {
 	return startMetricsServer(ctx, reg, cfg.Port)
 }
 
-func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+// exitCode returns the process exit code for a run() result.
+// Expected termination conditions are not errors.
+func exitCode(err error) int {
+	if err == nil ||
+		errors.Is(err, flag.ErrHelp) ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return 0
+	}
+	return 1
+}
 
-	if err := run(ctx); err != nil {
-		cancel()
-		if !errors.Is(err, flag.ErrHelp) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+
+	err := run(ctx)
+	stop()
+
+	if code := exitCode(err); code != 0 {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(code)
 	}
 }

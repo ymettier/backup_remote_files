@@ -36,9 +36,9 @@ depends = ["check:fmt", "check:lint", "check:test"]
 [tasks."build"]
 description = "Build the application"
 run = [
-    "echo dev > version.txt",
+    "echo dev > cmd/backup_remote_files/version.txt",
     "mkdir -p bin",
-    "go build -trimpath -o bin/backup_remote_files ."
+    "go build -trimpath -o bin/backup_remote_files ./cmd/backup_remote_files"
 ]
 
 [tasks."run"]

@@ -1,0 +1,54 @@
+# Copyright 2024-2026 The Backup_remote_files Authors. All rights reserved.
+# SPDX-License-Identifier: MIT
+
+# Default configuration for backup_remote_files.
+# This file is embedded into the binary. A user configuration file is merged on top of it.
+#
+# Every setting can be overridden with a BRF_* environment variable:
+#   - camelCase keys: uppercase without underscore (retryInterval -> BRF_RETRYINTERVAL)
+#   - nested keys: uppercase with underscores (logging.level -> BRF_LOGGING_LEVEL)
+#
+# The exporter port can also be set with -p/--port, which overrides exporter.port.
+
+# Files to back up, keyed by backup ID (the ID is used as a metrics label).
+# url and outputFile are required for every backup. Example:
+#
+# backups:
+#   someid:
+#     url: https://some.url/data         # Remote file URL
+#     username: ""                       # HTTP basic auth username, empty for none
+#     password: ""                       # HTTP basic auth password
+#     outputFile: "outputfile"           # Local destination file
+#     timeout: "1m"                      # Request timeout for this backup
+backups: {}
+
+# Default request timeout for backups that do not set their own timeout.
+backupTimeout: "1m"
+
+# Delay between two full backup runs.
+interval: "24h"
+
+# Delay between retries of failed backups.
+retryInterval: "24h"
+
+exporter:
+  # HTTP port serving the /metrics endpoint. Overridden by -p/--port.
+  port: 9289
+  # Prometheus metrics namespace.
+  metricsPrefix: "backupremotefiles"
+
+logging:
+  # Minimum log level: DEBUG, INFO, WARN or ERROR.
+  level: INFO
+  # Log destination: "stderr", "stdout" or a filename. Empty means stderr.
+  filename: ""
+  # Maximum size in megabytes before log rotation.
+  maxSize: 5
+  # Number of rotated log files to keep.
+  maxBackups: 10
+  # Number of days to keep rotated log files.
+  maxAge: 14
+  # Compress rotated log files.
+  compress: true
+  # Write logs as JSON instead of text.
+  json: false

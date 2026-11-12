@@ -10,8 +10,8 @@ ARG TARGETARCH
 WORKDIR /app
 COPY . .
 RUN go mod download
-RUN git tag --points-at HEAD > version.txt; test -s version.txt || echo dev > version.txt; cat version.txt
-RUN GOARCH=$TARGETARCH GOOS=$TARGETOS go build -v -o backup_remote_files
+RUN git tag --points-at HEAD > cmd/backup_remote_files/version.txt; test -s cmd/backup_remote_files/version.txt || echo dev > cmd/backup_remote_files/version.txt; cat cmd/backup_remote_files/version.txt
+RUN GOARCH=$TARGETARCH GOOS=$TARGETOS go build -v -o backup_remote_files ./cmd/backup_remote_files
 RUN GOARCH=$TARGETARCH GOOS=$TARGETOS go test ./...
 
 FROM debian:bookworm-slim

@@ -40,37 +40,24 @@ type LogOptions struct {
 
 // getWriter returns an io.Writer and whether lumberjack rotation is being used.
 func getWriter(opts *LogOptions) (io.Writer, bool) {
-	filename := ""
-	if opts != nil && opts.Filename != "" {
-		filename = opts.Filename
-	}
-
-	if filename == "" {
+	if opts == nil || opts.Filename == "" {
 		return os.Stderr, false
 	}
 
-	switch filename {
+	switch opts.Filename {
 	case "stdout":
 		return os.Stdout, false
 	case "stderr":
 		return os.Stderr, false
 	}
 
-	l := &lumberjack.Logger{
-		Filename: filename,
-	}
-	if opts != nil {
-		l.MaxSize = opts.MaxSize
-		l.MaxBackups = opts.MaxBackups
-		l.MaxAge = opts.MaxAge
-		l.Compress = opts.Compress
-	} else {
-		l.MaxSize = 5
-		l.MaxBackups = 10
-		l.MaxAge = 14
-		l.Compress = true
-	}
-	return l, true
+	return &lumberjack.Logger{
+		Filename:   opts.Filename,
+		MaxSize:    opts.MaxSize,
+		MaxBackups: opts.MaxBackups,
+		MaxAge:     opts.MaxAge,
+		Compress:   opts.Compress,
+	}, true
 }
 
 // newLogger creates a new logger based on opts or environment variables if opts is nil.
